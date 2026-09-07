@@ -1,0 +1,2347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SHMEM 架构与硬件原理 · 交互式说明书</title>
+<style>
+:root{
+  --bg:#eef2f7; --card:#ffffff; --soft:#f4f7fb; --ink:#0f172a; --muted:#5b6b82; --line:#dbe3ee;
+  --brand:#2563eb; --brand2:#0891b2;
+  --c-mte:#d97706; --c-sdma:#059669; --c-rdma:#7c3aed; --c-udma:#0891b2; --c-ctrl:#64748b; --c-sync:#e11d48;
+  --edge:#8fa3bd; --code-bg:#0f172a; --code-ink:#e2e8f0; --ok:#16a34a;
+  --shadow:0 1px 2px rgba(15,23,42,.05), 0 10px 28px -14px rgba(15,23,42,.22);
+}
+html[data-theme="dark"]{
+  --bg:#0a101d; --card:#101a2c; --soft:#0d1526; --ink:#e5edf8; --muted:#93a4bc; --line:#1e2b44;
+  --edge:#54657f; --code-bg:#0b1220; --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 30px -14px rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.75 "PingFang SC","Microsoft YaHei","Noto Sans SC","Segoe UI",system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased}
+a{color:var(--brand);text-decoration:none}
+a:hover{text-decoration:underline}
+code,kbd,pre,.mono{font-family:"JetBrains Mono","SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace}
+
+/* ---------- 顶栏 ---------- */
+#topbar{position:fixed;inset:0 0 auto 0;height:54px;z-index:60;display:flex;align-items:center;gap:14px;
+  padding:0 18px;background:color-mix(in srgb,var(--card) 82%,transparent);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line)}
+#topbar .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:15px;letter-spacing:.5px}
+#topbar .logo .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,var(--brand),var(--brand2));
+  display:grid;place-items:center;color:#fff;font-size:11px;font-weight:900}
+#topbar .sp{flex:1}
+#topbar button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;
+  padding:6px 12px;font-size:13px;cursor:pointer}
+#topbar button:hover{border-color:var(--brand);color:var(--brand)}
+#progress{position:fixed;top:54px;left:0;height:3px;z-index:61;background:linear-gradient(90deg,var(--brand),var(--brand2));width:0}
+
+/* ---------- 布局 ---------- */
+.page{--toc-w:238px;display:grid;grid-template-columns:var(--toc-w) minmax(0,1fr);max-width:1340px;margin:0 auto;
+  padding:78px 20px 60px;transition:grid-template-columns .28s ease}
+body.toc-dragging .page,body.toc-dragging nav#toc{transition:none}
+nav#toc{position:sticky;top:78px;align-self:start;max-height:calc(100vh - 100px);
+  display:flex;flex-direction:column;padding:12px 10px 12px 4px;transition:padding .28s ease}
+nav#toc .toc-body{overflow-y:auto;min-height:0;flex:1;scrollbar-width:thin;padding-right:4px}
+nav#toc .toc-head{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:2px 6px 6px}
+nav#toc .t{font-size:11px;font-weight:800;letter-spacing:2px;color:var(--muted)}
+#tocFold{flex:none;width:26px;height:26px;border-radius:8px;border:1px solid var(--line);background:var(--soft);
+  color:var(--muted);cursor:pointer;font-size:13px;line-height:1;display:grid;place-items:center;transition:.18s}
+#tocFold:hover{color:var(--brand);border-color:var(--brand)}
+body.toc-folded #tocFold{transform:rotate(180deg)}
+nav#toc .tg{font-size:10.5px;font-weight:800;letter-spacing:1.6px;color:var(--muted);opacity:.9;
+  margin:12px 10px 4px;padding-top:9px;border-top:1px dashed var(--line)}
+nav#toc .toc-body .tg:first-child{margin-top:2px;border-top:0;padding-top:2px}
+nav#toc a{display:flex;align-items:center;gap:9px;padding:5.5px 9px;border-radius:9px;color:var(--muted);
+  font-size:13.3px;border-left:2px solid transparent;transition:background .15s,color .15s}
+nav#toc a:hover{color:var(--ink);text-decoration:none;background:var(--soft)}
+nav#toc a .no{flex:none;width:24px;height:24px;border-radius:7px;background:var(--soft);border:1px solid var(--line);
+  display:grid;place-items:center;font-size:11px;font-weight:800;transition:.15s}
+nav#toc a.active{color:var(--brand);background:color-mix(in srgb,var(--brand) 10%,transparent);border-left-color:var(--brand);font-weight:700}
+nav#toc a.active .no{background:var(--brand);border-color:var(--brand);color:#fff}
+nav#toc a.sub-item{margin-left:19px;padding:3.5px 9px 3.5px 11px;font-size:12.2px;border-left:1px solid var(--line);
+  border-radius:0 8px 8px 0}
+nav#toc a.sub-item:hover{border-left-color:var(--brand)}
+nav#toc a.sub-item.active{color:var(--brand);font-weight:600;background:color-mix(in srgb,var(--brand) 8%,transparent);border-left-color:var(--brand)}
+nav#toc .toc-foot{margin-top:12px;padding:8px 10px 2px;border-top:1px dashed var(--line);font-size:10.5px;
+  color:var(--muted);opacity:.85;line-height:1.6}
+#tocGrab{position:absolute;top:0;right:-9px;width:18px;height:100%;cursor:col-resize;z-index:6;touch-action:none}
+#tocGrab::after{content:"";position:absolute;right:7px;top:18%;bottom:18%;width:3px;border-radius:3px;
+  background:var(--line);opacity:0;transition:opacity .18s}
+#tocGrab:hover::after,#tocGrab.on::after{opacity:1;background:var(--brand)}
+body.toc-dragging{user-select:none;cursor:col-resize}
+#tocMenu{display:none}
+#tocOverlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.42);opacity:0;pointer-events:none;transition:opacity .25s;z-index:65}
+body.toc-open #tocOverlay{opacity:1;pointer-events:auto}
+body.toc-open{overflow:hidden}
+/* 折叠态：只留数字窄轨 */
+body.toc-folded nav#toc .lb,body.toc-folded nav#toc .tg,body.toc-folded nav#toc .sub-item,
+body.toc-folded nav#toc .toc-foot,body.toc-folded nav#toc .t{display:none}
+body.toc-folded nav#toc{padding:12px 4px}
+body.toc-folded nav#toc .toc-head{justify-content:center}
+body.toc-folded nav#toc a{justify-content:center;padding:5px 0;border-left:0}
+main{min-width:0}
+
+/* ---------- 章节 ---------- */
+section.chapter{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:30px 34px 26px;
+  margin:26px 0;scroll-margin-top:78px;box-shadow:var(--shadow)}
+section.chapter>h2{display:flex;align-items:center;gap:12px;font-size:23px;margin:2px 0 6px;letter-spacing:.3px}
+section.chapter>h2 .n{flex:none;width:34px;height:34px;border-radius:11px;display:grid;place-items:center;
+  font-size:15px;font-weight:900;color:#fff;background:linear-gradient(135deg,var(--brand),var(--brand2))}
+section.chapter>h2 .n.mte{background:var(--c-mte)} section.chapter>h2 .n.sdma{background:var(--c-sdma)}
+section.chapter>h2 .n.rdma{background:var(--c-rdma)} section.chapter>h2 .n.udma{background:var(--c-udma)}
+section.chapter>h2 .n.sync{background:var(--c-sync)} section.chapter>h2 .n.ctrl{background:var(--c-ctrl)}
+.lede{color:var(--muted);font-size:14.5px;margin:0 0 14px}
+h3{font-size:17px;margin:26px 0 8px;display:flex;align-items:center;gap:8px;scroll-margin-top:92px}
+h3::before{content:"";width:5px;height:16px;border-radius:3px;background:var(--brand)}
+h4{font-size:14.5px;margin:18px 0 6px;color:var(--ink)}
+ul,ol{padding-left:22px} li{margin:4px 0}
+.small{font-size:12.5px;color:var(--muted)}
+b.k{color:var(--brand)}
+
+/* ---------- 提示框 ---------- */
+.callout{border-radius:13px;padding:13px 16px;margin:14px 0;font-size:14px;border:1px solid;display:flex;gap:10px}
+.callout .ic{flex:none;font-size:17px;line-height:1.5}
+.callout.ana{background:color-mix(in srgb,var(--c-mte) 8%,var(--card));border-color:color-mix(in srgb,var(--c-mte) 35%,var(--line))}
+.callout.key{background:color-mix(in srgb,var(--brand) 8%,var(--card));border-color:color-mix(in srgb,var(--brand) 32%,var(--line))}
+.callout.warn{background:color-mix(in srgb,var(--c-sync) 7%,var(--card));border-color:color-mix(in srgb,var(--c-sync) 32%,var(--line))}
+
+/* ---------- 代码块 ---------- */
+.codeblock{margin:14px 0;border-radius:13px;overflow:hidden;border:1px solid #1e293b;background:var(--code-bg)}
+.codeblock .hd{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#16213a;color:#9fb3d1;font-size:12px}
+.codeblock .hd .file{font-family:inherit}
+.codeblock pre{margin:0;padding:13px 16px;overflow:auto;color:var(--code-ink);font-size:12.6px;line-height:1.65}
+.codeblock pre .cm{color:#7d8db0} .codeblock pre .kw{color:#7dd3fc} .codeblock pre .st{color:#fbbf24}
+code.inline{background:color-mix(in srgb,var(--brand) 10%,transparent);border:1px solid color-mix(in srgb,var(--brand) 22%,transparent);
+  color:var(--ink);padding:1px 6px;border-radius:6px;font-size:12.5px}
+
+/* ---------- 徽章/芯片 ---------- */
+.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:12px;
+  border:1px solid var(--line);background:var(--soft);color:var(--muted);margin:2px 3px 2px 0}
+.chip.mte{color:var(--c-mte);border-color:color-mix(in srgb,var(--c-mte) 45%,var(--line));background:color-mix(in srgb,var(--c-mte) 9%,var(--card))}
+.chip.sdma{color:var(--c-sdma);border-color:color-mix(in srgb,var(--c-sdma) 45%,var(--line));background:color-mix(in srgb,var(--c-sdma) 9%,var(--card))}
+.chip.rdma{color:var(--c-rdma);border-color:color-mix(in srgb,var(--c-rdma) 45%,var(--line));background:color-mix(in srgb,var(--c-rdma) 9%,var(--card))}
+.chip.udma{color:var(--c-udma);border-color:color-mix(in srgb,var(--c-udma) 45%,var(--line));background:color-mix(in srgb,var(--c-udma) 9%,var(--card))}
+.chip.sync{color:var(--c-sync);border-color:color-mix(in srgb,var(--c-sync) 45%,var(--line));background:color-mix(in srgb,var(--c-sync) 9%,var(--card))}
+.chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,var(--line));background:color-mix(in srgb,var(--ok) 9%,var(--card))}
+.src{font-family:inherit;font-size:11.6px;color:var(--muted);background:var(--soft);border:1px dashed var(--line);
+  padding:1px 8px;border-radius:7px;margin:2px 3px 2px 0;display:inline-block}
+
+/* ---------- 表格 ---------- */
+.tbl{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.4px}
+.tbl th{background:var(--soft);text-align:left;padding:8px 11px;border:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+.tbl td{padding:7px 11px;border:1px solid var(--line);vertical-align:top}
+.tbl tr:hover td{background:color-mix(in srgb,var(--brand) 4%,transparent)}
+
+/* ---------- 折叠深入 ---------- */
+details.deep{border:1px solid var(--line);border-radius:13px;margin:12px 0;background:var(--soft);overflow:hidden}
+details.deep>summary{cursor:pointer;padding:11px 16px;font-weight:700;font-size:13.8px;list-style:none;display:flex;gap:9px;align-items:center}
+details.deep>summary::-webkit-details-marker{display:none}
+details.deep>summary::before{content:"▸";color:var(--brand);transition:transform .2s}
+details.deep[open]>summary::before{transform:rotate(90deg)}
+details.deep .body{padding:2px 18px 16px;border-top:1px dashed var(--line)}
+
+/* ---------- 标签页 ---------- */
+.tabwrap{margin:16px 0}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;border-bottom:2px solid var(--line);padding-bottom:0}
+.tabs button{border:1px solid var(--line);border-bottom:none;background:var(--soft);color:var(--muted);
+  padding:8px 16px;border-radius:11px 11px 0 0;cursor:pointer;font-size:13.6px;font-weight:600}
+.tabs button.active{background:var(--card);color:var(--ink);border-color:var(--line);box-shadow:0 -2px 0 var(--brand) inset}
+.tabs button[data-accent="mte"].active{box-shadow:0 -2px 0 var(--c-mte) inset;color:var(--c-mte)}
+.tabs button[data-accent="sdma"].active{box-shadow:0 -2px 0 var(--c-sdma) inset;color:var(--c-sdma)}
+.tabs button[data-accent="rdma"].active{box-shadow:0 -2px 0 var(--c-rdma) inset;color:var(--c-rdma)}
+.tabs button[data-accent="udma"].active{box-shadow:0 -2px 0 var(--c-udma) inset;color:var(--c-udma)}
+.tabpanel{display:none;padding:18px 4px 4px;border-top:none}
+.tabpanel.active{display:block;animation:fadein .25s ease}
+@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ---------- 步骤器 ---------- */
+.stepper{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;margin:14px 0}
+.steps{display:flex;flex-direction:column;gap:7px}
+.steps button{display:flex;gap:10px;align-items:flex-start;text-align:left;border:1px solid var(--line);background:var(--card);
+  color:var(--muted);padding:9px 12px;border-radius:11px;cursor:pointer;font-size:13.2px;line-height:1.45}
+.steps button .no{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11.5px;
+  font-weight:800;background:var(--soft);border:1px solid var(--line);color:var(--muted)}
+.steps button.active{border-color:var(--brand);color:var(--ink);background:color-mix(in srgb,var(--brand) 6%,var(--card))}
+.steps button.active .no{background:var(--brand);border-color:var(--brand);color:#fff}
+.stepdetail{border:1px solid var(--line);border-radius:14px;background:var(--soft);padding:16px 18px;min-height:200px}
+.stepdetail h4{margin:0 0 6px;font-size:15px}
+.stepdetail .desc{font-size:13.6px;margin:0 0 10px}
+.stepdetail .refs{margin-top:10px}
+
+/* ---------- 图容器 ---------- */
+.fig{margin:16px 0;border:1px solid var(--line);border-radius:15px;background:var(--card);overflow:hidden}
+.fig .cap{display:flex;align-items:center;gap:8px;padding:9px 15px;border-bottom:1px solid var(--line);
+  font-size:12.8px;color:var(--muted);background:var(--soft)}
+.fig .cap b{color:var(--ink)}
+.fig .body{padding:10px}
+.fig svg{display:block;width:100%;height:auto}
+.fig .foot{padding:8px 15px;border-top:1px dashed var(--line);font-size:12.2px;color:var(--muted)}
+
+/* ---------- SVG 通用样式 ---------- */
+svg text{font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif}
+svg .mono-t{font-family:"JetBrains Mono",Consolas,monospace}
+.s-panel{fill:var(--card);stroke:var(--line)}
+.s-soft{fill:var(--soft);stroke:var(--line)}
+.s-node{fill:var(--card);stroke:var(--edge);stroke-width:1.3}
+.s-t{font-size:13px;font-weight:700;fill:var(--ink)}
+.s-ts{font-size:11px;fill:var(--muted)}
+.s-tc{font-size:10px;fill:var(--muted)}
+.s-edge{stroke:var(--edge);stroke-width:1.6;fill:none}
+.s-dash{stroke-dasharray:5 4}
+.s-animflow{stroke-dasharray:7 6;animation:dashmove 1.1s linear infinite}
+@keyframes dashmove{to{stroke-dashoffset:-13}}
+.s-flag{animation:flagflash .5s ease}
+@keyframes flagflash{0%{opacity:0}30%{opacity:1}100%{opacity:.25}}
+
+/* ---------- 交互控件 ---------- */
+.ctrl{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0}
+.ctrl label{font-size:12.8px;color:var(--muted)}
+.ctrl select,.ctrl input[type="text"],.ctrl input[type="number"]{border:1px solid var(--line);background:var(--card);
+  color:var(--ink);border-radius:9px;padding:5px 9px;font-size:13px;font-family:inherit}
+.btn{border:1px solid var(--brand);background:var(--brand);color:#fff;border-radius:10px;padding:7px 16px;
+  font-size:13.2px;cursor:pointer;font-weight:600}
+.btn:hover{filter:brightness(1.08)}
+.btn.ghost{background:var(--card);color:var(--brand)}
+.btn.sm{padding:4px 11px;font-size:12.4px}
+.statusline{font-size:13px;color:var(--muted);background:var(--soft);border:1px dashed var(--line);
+  border-radius:10px;padding:8px 13px;margin:8px 0;min-height:20px}
+.out{background:var(--soft);border:1px solid var(--line);border-radius:13px;padding:14px 16px;font-size:13.6px;margin-top:10px}
+.out .big{font-size:16px;font-weight:800}
+.arrowgrow{stroke-dasharray:var(--len);stroke-dashoffset:var(--len);animation:draw .55s ease forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.faded{opacity:.16;transition:opacity .4s}
+
+/* ---------- hero ---------- */
+#hero{border-radius:22px;padding:46px 42px 38px;margin:26px 0;position:relative;overflow:hidden;
+  background:linear-gradient(135deg,#0c2a5c 0%,#123f8f 45%,#0e7490 100%);color:#eaf2ff;box-shadow:var(--shadow)}
+#hero .eyebrow{font-size:12.5px;letter-spacing:3px;opacity:.85;font-weight:700}
+#hero h1{font-size:37px;margin:10px 0 8px;letter-spacing:1px}
+#hero p.sub{font-size:15.5px;max-width:760px;opacity:.92;margin:0 0 20px}
+#hero .chips .chip{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.28);color:#eaf2ff}
+#hero .acts{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap}
+#hero .acts a{background:#fff;color:#0c2a5c;font-weight:700;border-radius:11px;padding:10px 20px;font-size:14px}
+#hero .acts a.ghost{background:transparent;color:#eaf2ff;border:1px solid rgba(255,255,255,.45)}
+#hero .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:26px;max-width:720px}
+#hero .stats .st{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.18);border-radius:13px;padding:10px 14px}
+#hero .stats .st b{display:block;font-size:21px}
+#hero .stats .st span{font-size:12px;opacity:.8}
+#hero .grid-deco{position:absolute;right:-60px;top:-60px;opacity:.16;pointer-events:none}
+
+/* ---------- misc ---------- */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.card{border:1px solid var(--line);border-radius:14px;padding:15px 17px;background:var(--soft)}
+.card h4{margin:0 0 6px;font-size:14px}
+.card p{margin:0;font-size:13.2px;color:var(--muted)}
+.kvstrip{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+#backtop{position:fixed;right:22px;bottom:24px;z-index:70;width:42px;height:42px;border-radius:13px;border:1px solid var(--line);
+  background:var(--card);color:var(--ink);font-size:17px;cursor:pointer;box-shadow:var(--shadow);display:none}
+footer{color:var(--muted);font-size:12.6px;text-align:center;padding:26px 10px 8px}
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.legend .chip b{font-weight:800}
+@media (max-width:1000px){
+  .page{grid-template-columns:1fr!important;padding-top:70px}
+  #tocMenu{display:inline-flex}
+  #tocOverlay{display:block}
+  nav#toc{position:fixed;left:0;top:0;bottom:0;width:min(82vw,330px);max-height:none;
+    transform:translateX(-104%);transition:transform .28s ease;z-index:70;
+    background:var(--card);border-right:1px solid var(--line);
+    box-shadow:14px 0 40px rgba(15,23,42,.18);padding:14px 12px 24px 6px;margin:0}
+  body.toc-open nav#toc{transform:none}
+  body.toc-folded nav#toc{padding:14px 12px 24px 6px}
+  #tocFold,#tocGrab,nav#toc .toc-foot{display:none!important}
+  .stepper{grid-template-columns:1fr}
+  .grid2,.grid3{grid-template-columns:1fr}
+  section.chapter{padding:22px 18px}
+  #hero{padding:30px 22px}
+  #hero h1{font-size:28px}
+  #hero .stats{grid-template-columns:1fr 1fr}
+}
+@media print{
+  #topbar,#progress,nav#toc,#backtop,.ctrl,.acts,#tocMenu,#tocOverlay{display:none!important}
+  .page{grid-template-columns:1fr;padding:0}
+  section.chapter{box-shadow:none;break-inside:avoid-page}
+  details.deep{display:block} details.deep .body{display:block!important}
+}
+</style>
+</head>
+<body>
+
+<!-- 共享 SVG 箭头 marker 定义 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8fa3bd"/></marker>
+<marker id="ah-b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2563eb"/></marker>
+<marker id="ah-m" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#d97706"/></marker>
+<marker id="ah-g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#059669"/></marker>
+<marker id="ah-v" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#7c3aed"/></marker>
+<marker id="ah-c" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0891b2"/></marker>
+<marker id="ah-r" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#e11d48"/></marker>
+</defs></svg>
+
+<div id="topbar">
+  <button id="tocMenu" title="打开目录">☰ 目录</button>
+  <div class="logo"><span class="dot">S</span>SHMEM 架构与硬件原理</div>
+  <div class="sp"></div>
+  <a href="https://gitcode.com/cann/shmem" target="_blank" style="font-size:12.8px;color:var(--muted)">gitcode/cann/shmem</a>
+  <button id="themeBtn" title="切换深浅色">🌙 深色</button>
+</div>
+<div id="progress"></div>
+<div id="tocOverlay"></div>
+
+<div class="page">
+<nav id="toc" aria-label="文档目录">
+  <div class="toc-head">
+    <span class="t">目录 CONTENTS</span>
+    <button id="tocFold" title="折叠目录（快捷键 [）" aria-expanded="true">«</button>
+  </div>
+  <div class="toc-body">
+    <div class="tg">入门</div>
+    <a href="#ch0" title="阅读指南"><span class="no">0</span><span class="lb">阅读指南</span></a>
+    <a href="#ch1" title="SHMEM 是什么"><span class="no">1</span><span class="lb">SHMEM 是什么</span></a>
+    <a class="sub-item" href="#s-mpi" data-ch="ch1">与 MPI 的本质区别</a>
+    <a class="sub-item" href="#s-hello" data-ch="ch1">最小可运行示例</a>
+    <div class="tg">架构基础</div>
+    <a href="#ch2" title="总体分层架构"><span class="no">2</span><span class="lb">总体分层架构</span></a>
+    <a href="#ch3" title="对称内存模型"><span class="no">3</span><span class="lb">对称内存模型</span></a>
+    <div class="tg">启动流程</div>
+    <a href="#ch4" title="控制面 Bootstrap"><span class="no">4</span><span class="lb">控制面 Bootstrap</span></a>
+    <a href="#ch5" title="初始化全流程"><span class="no">5</span><span class="lb">初始化全流程</span></a>
+    <div class="tg">通信引擎</div>
+    <a href="#ch6" title="四大通信引擎"><span class="no">6</span><span class="lb">四大通信引擎</span></a>
+    <a class="sub-item" href="#s-mte" data-ch="ch6">MTE · 流水搬运</a>
+    <a class="sub-item" href="#s-sdma" data-ch="ch6">SDMA · 队列搬运</a>
+    <a class="sub-item" href="#s-rdma" data-ch="ch6">RDMA · 跨节点</a>
+    <a class="sub-item" href="#s-udma" data-ch="ch6">UDMA · 灵衢总线</a>
+    <a class="sub-item" href="#s-65" data-ch="ch6">四引擎横向对比</a>
+    <div class="tg">同步与拓扑</div>
+    <a href="#ch7" title="同步与内存保序"><span class="no">7</span><span class="lb">同步与内存保序</span></a>
+    <a class="sub-item" href="#s-sig" data-ch="ch7">signal 自旋等待</a>
+    <a class="sub-item" href="#s-bar" data-ch="ch7">barrier 算法动画</a>
+    <a class="sub-item" href="#s-quiet" data-ch="ch7">quiet / DCCI</a>
+    <a href="#ch8" title="拓扑与选路"><span class="no">8</span><span class="lb">拓扑与选路</span></a>
+    <div class="tg">实战与参考</div>
+    <a href="#ch9" title="一次 put 的旅程"><span class="no">9</span><span class="lb">一次 put 的旅程</span></a>
+    <a href="#ch10" title="910 vs 950 速查"><span class="no">10</span><span class="lb">910 vs 950 速查</span></a>
+    <a href="#ch11" title="源码落点索引"><span class="no">11</span><span class="lb">源码落点索引</span></a>
+    <a href="#ch12" title="术语速查"><span class="no">12</span><span class="lb">术语速查</span></a>
+  </div>
+  <div class="toc-foot">⟷ 拖右缘调宽 · 按 <b>[</b> 折叠<br>折叠后悬停数字可见章节名</div>
+  <div id="tocGrab" title="拖拽调整目录宽度"></div>
+</nav>
+
+<main>
+
+<!-- ============ HERO ============ -->
+<div id="hero">
+  <svg class="grid-deco" width="420" height="420" viewBox="0 0 420 420">
+    <g fill="none" stroke="#fff" stroke-width="1">
+      <path d="M210 20 L390 120 L390 300 L210 400 L30 300 L30 120 Z"/>
+      <path d="M210 60 L350 140 L350 280 L210 360 L70 280 L70 140 Z"/>
+      <circle cx="210" cy="210" r="60"/><circle cx="210" cy="210" r="100"/>
+      <path d="M20 210 H400 M210 20 V400 M60 60 L360 360 M360 60 L60 360"/>
+    </g>
+    <g fill="#fff"><circle cx="210" cy="210" r="6"/><circle cx="350" cy="140" r="4"/><circle cx="70" cy="280" r="4"/><circle cx="350" cy="280" r="4"/><circle cx="70" cy="140" r="4"/></g>
+  </svg>
+  <div class="eyebrow">ASCEND · SYMMETRIC MEMORY · PGAS</div>
+  <h1>SHMEM 架构与硬件原理说明书</h1>
+  <p class="sub">基于 <b>cann/shmem v1.6</b> 源码走读编写。用 12 章 + 12 张交互图，把「对称内存 · 控制面/数据面分离 · MTE / SDMA / RDMA / UDMA 四引擎 · 同步保序 · 拓扑选路」一次讲透——深入源码细节，浅出到看得见的动画。</p>
+  <div class="chips">
+    <span class="chip">📐 全图手绘 SVG</span><span class="chip">🖱️ 全交互单文件</span>
+    <span class="chip">🔌 离线可用 · 零依赖</span><span class="chip">🖥️ 昇腾 910 / 950 双平台</span>
+  </div>
+  <div class="acts">
+    <a href="#ch0">开始阅读 →</a>
+    <a href="#ch2" class="ghost">先看全景架构图</a>
+    <a href="#ch9" class="ghost">直接看 put 全旅程</a>
+  </div>
+  <div class="stats">
+    <div class="st"><b>4</b><span>通信引擎（MTE/SDMA/RDMA/UDMA）</span></div>
+    <div class="st"><b>2</b><span>平台代际（910 · 950）</span></div>
+    <div class="st"><b>12</b><span>章 · 阅读路线可选</span></div>
+    <div class="st"><b>12+</b><span>交互图 / 模拟器</span></div>
+  </div>
+</div>
+
+<!-- ============ CH0 阅读指南 ============ -->
+<section class="chapter" id="ch0">
+  <h2><span class="n">0</span>阅读指南</h2>
+  <p class="lede">这是一份"一份顶四份"的说明书：既讲清楚 <b>是什么/为什么</b>（架构），也讲清楚 <b>怎么跑起来的</b>（流程），还落到 <b>每一行代码在哪</b>（源码索引）。按你的角色选一条路线即可。</p>
+  <div class="grid3">
+    <div class="card"><h4>🚀 应用 / 框架开发者</h4>
+      <p>关心如何把 SHMEM 用起来：第 1、3、4、5、9 章。重点看初始化约束、对称堆规则、put/get 语义与同步。</p></div>
+    <div class="card"><h4>🧮 算子（Kernel）开发者</h4>
+      <p>在 AICore 里写通信算子：第 3、6、7、9 章。重点看四大引擎的 UB/WQE/SQE 编程模型、quiet/fence 语义、barrier 算法。</p></div>
+    <div class="card"><h4>🔧 库 / 驱动贡献者</h4>
+      <p>要改 SHMEM 本身：全文 + 第 10、11 章。重点看平台差异宏、transport 抽象、HYBM 建堆、950 拓扑发现。</p></div>
+  </div>
+  <div class="callout key"><span class="ic">📌</span><div>全书基于本仓真实源码（v1.6.0）写成：所有结构体字段、队列布局、算法参数均可在 <b>第 11 章源码索引</b> 中找到对应文件。图形为示意抽象，字段名保持与代码一致。</div></div>
+  <div class="legend">
+    <span class="chip mte"><b>MTE</b> 内存传输引擎</span>
+    <span class="chip sdma"><b>SDMA</b> 系统 DMA（STARS）</span>
+    <span class="chip rdma"><b>RDMA/RoCE</b> 跨节点</span>
+    <span class="chip udma"><b>UDMA/UB</b> 灵衢总线</span>
+    <span class="chip sync"><b>SYNC</b> 同步/保序</span>
+    <span class="chip ok"><b>CTRL</b> 控制面</span>
+  </div>
+</section>
+
+<!-- ============ CH1 ============ -->
+<section class="chapter" id="ch1">
+  <h2><span class="n">1</span>SHMEM 是什么：一句话与一张对比</h2>
+  <p class="lede">在进入架构细节之前，先建立准确的"心智模型"。</p>
+
+  <div class="callout key"><span class="ic">💡</span><div><b>一句话定义</b>：SHMEM 是面向昇腾 NPU 的<b>对称内存（Symmetric Memory）通信库</b>——每个参与方（PE）持有一块<b>布局完全相同</b>的内存堆，任何一方可以在自己的算子（AICore kernel）里<b>直接读写别人的那块内存</b>，不需要对方参与。这种"大家共享一片分布式内存"的编程模型称为 <b>PGAS</b>（Partitioned Global Address Space，分区全局地址空间）。</div></div>
+
+  <div class="callout ana"><span class="ic">🌰</span><div><b>类比</b>：把 8 个 NPU 想象成 8 栋<b>格局完全相同的公寓楼</b>（每层户型一模一样）。你想去 3 号楼拿东西，不需要 3 号楼的人帮你搬（点对点消息），也不需要广播给所有楼（集合通信）——你只要说"<b>3 号楼 · 和我家相同位置的那间房</b>"，快递通道就能直达。SHMEM 的 <code class="inline">aclshmem_ptr(ptr, pe)</code> 干的就是这个"地址翻译"。</div></div>
+
+  <h3 id="s-mpi">1.1 与 MPI 消息模型的本质区别</h3>
+  <table class="tbl">
+    <tr><th style="width:130px"></th><th>MPI（消息传递）</th><th>SHMEM（对称内存 / PGAS）</th></tr>
+    <tr><td><b>通信发起</b></td><td>双方都要调用（send 必须配 recv）</td><td><b>单边</b>：只有发起方调用 put/get，对端无感知</td></tr>
+    <tr><td><b>地址知识</b></td><td>不需要知道对方缓冲区地址</td><td>必须知道对端<b>对称地址</b>（由对称堆保证可换算）</td></tr>
+    <tr><td><b>同步负担</b></td><td>由消息语义天然携带</td><td>需要显式 <code class="inline">signal / fence / quiet / barrier</code></td></tr>
+    <tr><td><b>通信-计算关系</b></td><td>多为"先通信后计算"两段式</td><td><b>通算融合</b>：通信指令内联在算子 kernel 里，与计算流水重叠</td></tr>
+    <tr><td><b>典型开销</b></td><td>走框架栈（HCCL 等），批量</td><td>引擎直驱（WQE/SQE/UB 流水），微秒级小消息也可用</td></tr>
+  </table>
+  <p class="small">注意：SHMEM 不是"取代 MPI/HCCL"，而是提供更<b>贴近硬件、更细粒度</b>的单边通信原语，常用于 MoE dispatch/combine、KV shuffle、AllReduce 融合算子等场景（见 examples 目录）。</p>
+
+  <h3 id="s-api">1.2 双侧接口体系与"高阶 / 低阶"</h3>
+  <p>SHMEM 的 API 分为 <b>Host 侧</b>（CPU 进程调用：初始化、堆管理、Team、下发 kernel）与 <b>Device 侧</b>（AICore 算子内联调用：RMA、AMO、同步）。Device 侧再分两层：</p>
+  <table class="tbl">
+    <tr><th style="width:110px">层级</th><th>位置</th><th>特点</th><th>代表接口</th></tr>
+    <tr><td><b>高阶接口</b></td><td><code class="inline">gm2gm/</code> · <code class="inline">host/data_plane/</code></td><td>屏蔽引擎细节，自动管理 buffer 与同步；默认 buffer <b>不支持并发</b></td><td><code class="inline">aclshmem_put/get</code>、<code class="inline">aclshmem_amo_*</code>、<code class="inline">aclshmemx_signal_op</code></td></tr>
+    <tr><td><b>低阶接口</b></td><td><code class="inline">engine/</code> 目录</td><td>直接暴露引擎语义（WQE/SQE/sync_id），调用方自管 buffer 与同步，<b>支持并发</b></td><td><code class="inline">aclshmemx_roce_*</code>、<code class="inline">aclshmemx_udma_*</code>、<code class="inline">aclshmemx_sdma_*</code>、<code class="inline">aclshmemx_mte_*</code></td></tr>
+  </table>
+  <p class="small">高阶接口使用前需先 <code class="inline">aclshmemx_set_mte_config / set_rdma_config / set_sdma_config / set_udma_config</code> 预配置一块 UB scratch 与 sync_id（第 6 章展开）。</p>
+
+  <h3 id="s-hello">1.3 一个最小可运行的例子（UID 模式）</h3>
+  <div class="codeblock"><div class="hd"><span class="file">examples/init（节选 · UID 模式启动）</span></div>
+<pre><span class="cm">// rank 0 生成 UniqueID，由应用层广播给所有 rank（库不负责广播）</span>
+aclshmemx_uniqueid_t uid = ACLSHMEM_UNIQUEID_INITIALIZER;
+<span class="kw">if</span> (my_pe == 0) aclshmemx_get_uniqueid(&amp;uid);
+broadcast(&amp;uid);                          <span class="cm">// 例如用 MPI_Bcast / 文件 / 手动分发</span>
+
+aclshmemx_init_attr_t attr = {};
+aclshmemx_set_attr_uniqueid_args(my_pe, n_pes, local_mem_size, &amp;uid, &amp;attr);
+aclshmemx_init_attr(ACLSHMEMX_INIT_WITH_UNIQUEID, &amp;attr);  <span class="cm">// 所有 PE 对称调用！</span>
+
+<span class="cm">// —— 此时对称堆就绪，各 rank 同序同大小 malloc，偏移自动一致 ——</span>
+<a class="jlink" href="#ch9">aclshmem_putmem(dst, src, n_bytes, dst_pe);</a>
+aclshmem_finalize();</pre></div>
+
+  <div class="callout warn"><span class="ic">⚠️</span><div><b>三条铁律</b>（源码文档反复强调）：① init/finalize 必须<b>每个 PE 都调用</b>；② 除 <code class="inline">my_pe</code> 外 init 参数需一致；③ 各 rank 的 <code class="inline">aclshmem_malloc/free</code> 必须<b>同序同大小</b>——否则对称偏移错位，RMA 会读写到错误地址（第 3、5 章展开原理）。</div></div>
+</section>
+
+<!-- ============ CH2 总体分层架构 ============ -->
+<section class="chapter" id="ch2">
+  <h2><span class="n">2</span>总体分层架构：三层两侧</h2>
+  <p class="lede">整个系统可以切成三条横带：<b>Host 控制面</b>（慢路径，建好就走开）、<b>Device 数据面</b>（快路径，算子内联）、<b>硬件层</b>（真正搬数据的引擎与总线）。</p>
+
+  <div class="fig">
+    <div class="cap">🖼️ <b>图 2-1 · SHMEM 全景分层架构</b>（hover 每个框可看说明；箭头 = 调用/数据流向）</div>
+    <div class="body">
+    <svg viewBox="0 0 960 700" role="img" aria-label="SHMEM 分层架构图">
+      <!-- ===== Band 1: HOST ===== -->
+      <rect x="8" y="8" width="944" height="172" rx="14" class="s-soft"/>
+      <rect x="24" y="22" width="212" height="24" rx="12" fill="#64748b"/>
+      <text x="130" y="38" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">HOST 侧 · 控制面（CPU 进程）</text>
+      <g>
+        <rect x="24" y="58" width="140" height="66" rx="10" class="s-node"><title>src/host/init/shmem_init.cpp：aclshmemx_init_attr / aclshmem_finalize，多实例引用计数</title></rect>
+        <text x="94" y="84" text-anchor="middle" class="s-t" font-size="12.5">初始化 / 终止</text>
+        <text x="94" y="101" text-anchor="middle" class="s-tc">init_attr · instance</text>
+        <text x="94" y="114" text-anchor="middle" class="s-tc">check_attr · backend</text>
+
+        <rect x="180" y="58" width="140" height="66" rx="10" class="s-node"><title>bootstrap 插件：Config Store（TCP+TLS，PE0 星型 KV）或 MPI，负责建链/元数据交换/barrier</title></rect>
+        <text x="250" y="84" text-anchor="middle" class="s-t" font-size="12.5">Bootstrap</text>
+        <text x="250" y="101" text-anchor="middle" class="s-tc">Config Store(TCP+TLS)</text>
+        <text x="250" y="114" text-anchor="middle" class="s-tc">或 MPI 插件</text>
+
+        <rect x="336" y="58" width="140" height="66" rx="10" class="s-node"><title>src/host/mem：对称堆分配器，first-fit + 每次分配后控制面 barrier 对齐</title></rect>
+        <text x="406" y="84" text-anchor="middle" class="s-t" font-size="12.5">内存堆管理</text>
+        <text x="406" y="101" text-anchor="middle" class="s-tc">malloc/free · first-fit</text>
+        <text x="406" y="114" text-anchor="middle" class="s-tc">同序同大小约束</text>
+
+        <rect x="492" y="58" width="140" height="66" rx="10" class="s-node"><title>src/host/team：通信域切分 split_strided，team 池 + pe_mapping</title></rect>
+        <text x="562" y="84" text-anchor="middle" class="s-t" font-size="12.5">Team 通信域</text>
+        <text x="562" y="101" text-anchor="middle" class="s-tc">TEAM_WORLD=0</text>
+        <text x="562" y="114" text-anchor="middle" class="s-tc">split_strided</text>
+
+        <rect x="648" y="58" width="140" height="66" rx="10" class="s-node"><title>src/host/transport：OpenDevice/MR注册/Prepare/Connect，RDMA(SDMA/UDMA) 传输管理器</title></rect>
+        <text x="718" y="84" text-anchor="middle" class="s-t" font-size="12.5">Transport 建链</text>
+        <text x="718" y="101" text-anchor="middle" class="s-tc">MR 注册 · QP/队列</text>
+        <text x="718" y="114" text-anchor="middle" class="s-tc">拓扑发现 rootinfo</text>
+
+        <rect x="804" y="58" width="132" height="66" rx="10" class="s-node"><title>python wheel、shmem-config 诊断工具、mstx/prof DFX</title></rect>
+        <text x="870" y="84" text-anchor="middle" class="s-t" font-size="12.5">Python / DFX</text>
+        <text x="870" y="101" text-anchor="middle" class="s-tc">pip wheel</text>
+        <text x="870" y="114" text-anchor="middle" class="s-tc">shmem-config · prof</text>
+      </g>
+
+      <!-- band1 -> band2 arrows -->
+      <path d="M94 124 V196" class="s-edge" marker-end="url(#ah-b)" stroke="#2563eb"/>
+      <text x="104" y="152" class="s-tc" fill="#2563eb">kernel 下发 &lt;&lt;&lt;（aclrtStream）</text>
+      <path d="M562 124 V196" class="s-edge" marker-end="url(#ah-b)" stroke="#2563eb"/>
+      <text x="572" y="152" class="s-tc" fill="#2563eb">team/堆参数同步到 device_state</text>
+      <path d="M718 124 V196" class="s-edge" marker-end="url(#ah-b)" stroke="#2563eb"/>
+      <text x="728" y="180" class="s-tc" fill="#2563eb">QP/队列地址写入元数据区</text>
+
+      <!-- ===== Band 2: DEVICE ===== -->
+      <rect x="8" y="200" width="944" height="196" rx="14" class="s-soft"/>
+      <rect x="24" y="214" width="308" height="24" rx="12" fill="#0891b2"/>
+      <text x="178" y="230" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">DEVICE 侧 · 数据面（AICore 算子内联 · ACLSHMEM_DEVICE）</text>
+      <g>
+        <rect x="24" y="250" width="288" height="56" rx="10" class="s-node"><title>高阶接口：屏蔽引擎，自动 buffer/同步；put/get/AMO/SO/CC</title></rect>
+        <text x="168" y="272" text-anchor="middle" class="s-t" font-size="12.5">高阶接口 gm2gm（GM↔GM）</text>
+        <text x="168" y="290" text-anchor="middle" class="s-tc">put/get · AMO · signal · barrier · quiet/fence</text>
+
+        <rect x="332" y="250" width="288" height="56" rx="10" class="s-node"><title>ub2gm：UB 直连远端 GM 的 MTE 流水搬运，非连续 copy_params</title></rect>
+        <text x="476" y="272" text-anchor="middle" class="s-t" font-size="12.5">高阶接口 ub2gm（UB↔远端 GM）</text>
+        <text x="476" y="290" text-anchor="middle" class="s-tc">MTE 流水 · 非连续 strided 拷贝</text>
+
+        <rect x="640" y="250" width="296" height="56" rx="10" class="s-node"><title>Host 发起的 data_plane：封装 kernel launch 到 stream（&lt;&lt;&lt;block, stream&gt;&gt;&gt;）</title></rect>
+        <text x="788" y="272" text-anchor="middle" class="s-t" font-size="12.5">Host data_plane（Host 发起）</text>
+        <text x="788" y="290" text-anchor="middle" class="s-tc">rma/so/cc/p2p_sync → kernel&lt;&lt;&lt;stream&gt;&gt;&gt;</text>
+      </g>
+      <g>
+        <rect x="24" y="318" width="140" height="60" rx="10" fill="#fef3e2" stroke="#d97706" stroke-width="1.4"><title>MTE 低阶：UB staging + SetFlag/WaitFlag 流水，同卡/近邻直驱</title></rect>
+        <text x="94" y="342" text-anchor="middle" font-size="12.5" font-weight="700" fill="#b45309">engine · MTE</text>
+        <text x="94" y="359" text-anchor="middle" class="s-tc">片上搬运 · UB 流水</text>
+
+        <rect x="176" y="318" width="140" height="60" rx="10" fill="#e7f6f0" stroke="#059669" stroke-width="1.4"><title>SDMA 低阶：填 SQE 到 STARS 通道，doorbell 提交，异步 GM/Host 搬运</title></rect>
+        <text x="246" y="342" text-anchor="middle" font-size="12.5" font-weight="700" fill="#047857">engine · SDMA</text>
+        <text x="246" y="359" text-anchor="middle" class="s-tc">SQE → STARS 通道</text>
+
+        <rect x="328" y="318" width="140" height="60" rx="10" fill="#f3eefe" stroke="#7c3aed" stroke-width="1.4"><title>RDMA 低阶：构造 WQE → SQ → doorbell → poll CQ；IN_DIE/XSCALE/HNS 三后端</title></rect>
+        <text x="398" y="342" text-anchor="middle" font-size="12.5" font-weight="700" fill="#6d28d9">engine · RDMA</text>
+        <text x="398" y="359" text-anchor="middle" class="s-tc">WQE/SQ/CQ · RoCE</text>
+
+        <rect x="480" y="318" width="140" height="60" rx="10" fill="#e6f6fb" stroke="#0891b2" stroke-width="1.4"><title>UDMA 低阶：SQE + EID/jetty/token，UB 灵衢总线；支持 relay 与硬件归约</title></rect>
+        <text x="550" y="342" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0e7490">engine · UDMA</text>
+        <text x="550" y="359" text-anchor="middle" class="s-tc">UB 总线 · EID/token</text>
+
+        <rect style="fill:var(--soft);stroke:var(--edge)" x="632" y="318" width="304" height="60" rx="10" stroke-dasharray="5 4"><title>HYBM 元数据区：固定虚拟地址，Host 侧 state 的 device 镜像 + QP/UDMA 信息表</title></rect>
+        <text x="784" y="340" text-anchor="middle" class="s-t" font-size="12.3">device_state 镜像（HYBM 元数据区）</text>
+        <text x="784" y="357" text-anchor="middle" class="s-tc">固定 VA · heap_base[] · topo_list[] · rdma/udma_config</text>
+      </g>
+
+      <!-- band2 -> band3 -->
+      <path d="M94 378 V414" class="s-edge" marker-end="url(#ah-m)" stroke="#d97706"/>
+      <path d="M246 378 V414" class="s-edge" marker-end="url(#ah-g)" stroke="#059669"/>
+      <path d="M398 378 V414" class="s-edge" marker-end="url(#ah-v)" stroke="#7c3aed"/>
+      <path d="M550 378 V414" class="s-edge" marker-end="url(#ah-c)" stroke="#0891b2"/>
+
+      <!-- ===== Band 3: HW ===== -->
+      <rect x="8" y="418" width="944" height="274" rx="14" class="s-soft"/>
+      <rect x="24" y="432" width="268" height="24" rx="12" fill="#334155"/>
+      <text x="158" y="448" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">硬件层 · 昇腾 NPU 与互联</text>
+      <g>
+        <rect x="24" y="468" width="150" height="56" rx="10" class="s-node"><title>AICore：矢量/立方核，SHMEM device 接口以内联形式编进用户 kernel</title></rect>
+        <text x="99" y="490" text-anchor="middle" class="s-t" font-size="12.3">AICore 计算核群</text>
+        <text x="99" y="507" text-anchor="middle" class="s-tc">vector / cube</text>
+
+        <rect x="190" y="468" width="150" height="56" rx="10" class="s-node"><title>UB Unified Buffer：每核私有高速暂存，MTE 流水的 staging</title></rect>
+        <text x="265" y="490" text-anchor="middle" class="s-t" font-size="12.3">UB 统一缓冲</text>
+        <text x="265" y="507" text-anchor="middle" class="s-tc">~192KB · 每 AIV</text>
+
+        <rect x="356" y="468" width="150" height="56" rx="10" class="s-node"><title>GM/HBM：全局内存，对称堆所在；L2/CMO 缓存维护</title></rect>
+        <text x="431" y="490" text-anchor="middle" class="s-t" font-size="12.3">GM / HBM (+L2)</text>
+        <text x="431" y="507" text-anchor="middle" class="s-tc">对称堆 · dcci 目标</text>
+
+        <rect x="522" y="468" width="150" height="56" rx="10" class="s-node"><title>SDMA/STARS 引擎：独立于 AICore 的系统 DMA，队列化 SQE</title></rect>
+        <text x="597" y="490" text-anchor="middle" class="s-t" font-size="12.3">SDMA（STARS）</text>
+        <text x="597" y="507" text-anchor="middle" class="s-tc">通道 SQ/CQ · doorbell</text>
+      </g>
+      <g>
+        <rect x="24" y="540" width="150" height="56" rx="10" class="s-node"><title>MTE：核内搬运引擎，MTE2(GM→UB)/MTE3(UB→GM)，经 HCCS 可直达对端 GM</title></rect>
+        <text x="99" y="562" text-anchor="middle" class="s-t" font-size="12.3">MTE 引擎</text>
+        <text x="99" y="579" text-anchor="middle" class="s-tc">MTE2/MTE3 流水级</text>
+
+        <rect x="190" y="540" width="150" height="56" rx="10" class="s-node"><title>RoCE 网卡：跨节点主力；IN_DIE 片内 / XSCALE(云脉) / HNS1825 三种后端</title></rect>
+        <text x="265" y="562" text-anchor="middle" class="s-t" font-size="12.3">RoCE 网卡</text>
+        <text x="265" y="579" text-anchor="middle" class="s-tc">IN_DIE·XSCALE·HNS1825</text>
+
+        <rect x="356" y="540" width="150" height="56" rx="10" class="s-node"><title>UB Fabric（灵衢）：950 代际统一互联，EID 寻址，URMA/UBMEM 内存语义</title></rect>
+        <text x="431" y="562" text-anchor="middle" class="s-t" font-size="12.3">UB 总线（灵衢）</text>
+        <text x="431" y="579" text-anchor="middle" class="s-tc">EID · jetty · token</text>
+
+        <rect x="522" y="540" width="150" height="56" rx="10" class="s-node"><title>HCCS：910 服务器内 NPU 间一致互联；SIO 为 A3 片内双 Die 通路</title></rect>
+        <text x="597" y="562" text-anchor="middle" class="s-t" font-size="12.3">HCCS / SIO 链路</text>
+        <text x="597" y="579" text-anchor="middle" class="s-tc">同机直连 · 片内 Die 间</text>
+      </g>
+
+      <!-- 对端 -->
+      <rect style="fill:var(--card);stroke:var(--edge)" x="700" y="468" width="236" height="128" rx="12" stroke-dasharray="7 5"/>
+      <text x="818" y="494" text-anchor="middle" class="s-t" font-size="13">对端 PE（远端 NPU / Host）</text>
+      <text x="818" y="514" text-anchor="middle" class="s-tc">同样拥有一套 SHMEM 栈与对称堆</text>
+      <text x="818" y="530" text-anchor="middle" class="s-tc">对称对象位于相同偏移</text>
+      <path d="M340 568 C 440 640, 560 640, 700 560" class="s-edge" stroke="#d97706" marker-end="url(#ah-m)" fill="none"/>
+      <text x="510" y="652" text-anchor="middle" class="s-tc" fill="#b45309">MTE 经 HCCS 直读对端 GM（load/store 语义）</text>
+      <path d="M340 560 C 460 610, 580 610, 700 530" class="s-edge" stroke="#7c3aed" marker-end="url(#ah-v)" fill="none"/>
+      <text x="516" y="600" text-anchor="middle" class="s-tc" fill="#6d28d9">RoCE 网卡跨网络访问对端 MR（rkey）</text>
+      <path d="M506 560 C 580 590, 640 580, 700 512" class="s-edge" stroke="#0891b2" marker-end="url(#ah-c)" fill="none"/>
+      <text x="640" y="556" text-anchor="middle" class="s-tc" fill="#0e7490">UB 总线 EID 寻址</text>
+    </svg>
+    </div>
+    <div class="foot">图例：蓝箭头 = 控制流（Host→Device 任务下发）；彩色箭头 = 数据流（引擎→硬件通路）。<b>控制面只在 init/建链阶段活跃；运行期数据完全走 Device 侧引擎直驱。</b></div>
+  </div>
+
+  <h3 id="s-layers">2.1 三层各自的职责边界</h3>
+  <table class="tbl">
+    <tr><th style="width:150px">层</th><th>解决什么问题</th><th>关键机制</th><th>性能特征</th></tr>
+    <tr><td><b>Host 控制面</b></td><td>谁在哪儿（PE 发现）、内存怎么对齐、队列/权限怎么建</td><td>Bootstrap（TCP KV / MPI）· MR 注册 · QP/队列创建 · state 镜像下发</td><td>毫秒级，只在启动/建堆/分配时介入</td></tr>
+    <tr><td><b>Device 数据面</b></td><td>算子内怎么高效搬数、怎么同步</td><td>内联 C++（ACLSHMEM_DEVICE）· 地址换算 · 引擎直驱 · 同步原语</td><td>微秒级，与计算重叠</td></tr>
+    <tr><td><b>硬件层</b></td><td>真正把字节从 A 搬到 B</td><td>MTE 流水 · SDMA 队列 · RoCE WQE/doorbell/CQ · UB EID/token</td><td>由引擎微架构决定（第 6 章逐个拆）</td></tr>
+  </table>
+
+  <div class="callout key"><span class="ic">🔑</span><div><b>理解架构的钥匙——"两个分离"</b>：<br>① <b>控制面/数据面分离</b>：CPU 只做一次性的建链与元数据交换，之后通信不再经过 Host（对比：传统方案每次通信都要 H2D→CPU→D2H 往返）。<br>② <b>高阶/低阶接口分离</b>：易用性与极致性能兼得——高阶自动管理资源，低阶把 WQE/SQE 直接交给你，支持多核并发（每个核自己的 QP/sync_id）。</div></div>
+
+  <details class="deep"><summary>🔬 深入：Device 侧代码如何"长"在用户算子里？</summary><div class="body">
+    <p>所有 Device 接口都带宏 <code class="inline">ACLSHMEM_DEVICE = __attribute__((always_inline)) __aicore__ __inline__</code>：它们不是运行时库调用，而是在<b>编译期被内联进用户 kernel</b>。因此：</p>
+    <ul>
+      <li>算子包含 <code class="inline">shmem.h</code> 后，put/get 会展开为对引擎的寄存器写与搬运指令，<b>零函数调用开销</b>；</li>
+      <li>Host 侧发起的接口（data_plane）本质是 <code class="inline">aclshmemi_putmem&lt;&lt;&lt;block, 0, stream&gt;&gt;&gt;(...)</code> —— 把同样的 device kernel 通过 ACL stream 下发；</li>
+      <li>device_state 通过<b>固定虚拟地址</b>读取（<code class="inline">aclshmemi_get_extra_context_addr(0)</code>，位于 <code class="inline">0x1800_0000_0000 − 1G − 32M</code> 附近的元数据区），算子里不需要任何指针参数就能拿到全局状态。</li>
+    </ul>
+    <span class="src">src/device/shmemi_device_common.hpp</span><span class="src">src/device/shmemi_device_meta.h</span>
+  </div></details>
+</section>
+
+<!-- ============ CH3 对称内存模型 ============ -->
+<section class="chapter" id="ch3">
+  <h2><span class="n">3</span>对称内存模型：一切单边通信的地基</h2>
+  <p class="lede">SHMEM 的全部魔法都建立在一个事实上：<b>同一逻辑对象在所有 PE 的堆里位于相同偏移</b>。本章讲清楚这块堆怎么布局、地址怎么换算。</p>
+
+  <div class="callout ana"><span class="ic">🌰</span><div><b>类比</b>：把每个 PE 的堆想成一栋<b>户型图完全相同的公寓楼</b>。"我家书房"这个说法在任何一栋楼里都指向同一个相对位置——所以"3 号楼的书房"不需要门牌号码簿，只需要 <b>楼号(PE) + 户型内位置(偏移)</b>。SHMEM 存的不是全局地址，而是"户型内偏移"，用到时现场换算。</div></div>
+
+  <div class="fig">
+    <div class="cap">🖼️ <b>图 3-1 · 对称内存模型与地址换算</b>（GVA 地址空间 → 各 PE 对称堆 → 偏移同构）</div>
+    <div class="body">
+    <svg viewBox="0 0 960 620" role="img" aria-label="对称内存模型图">
+      <!-- 地址条 -->
+      <text x="24" y="26" class="s-t">NPU 虚拟地址空间（GVA 全局编址）</text>
+      <rect style="fill:var(--soft);stroke:var(--line)" x="24" y="36" width="180" height="38" rx="6"/>
+      <text x="114" y="53" text-anchor="middle" class="s-tc">设备 VA 起点</text>
+      <text x="114" y="66" text-anchor="middle" class="s-tc mono-t">0x1_0000_0000_0000 (16T)</text>
+      <rect style="fill:var(--soft);stroke:var(--line)" x="204" y="36" width="240" height="38" rx="6"/>
+      <text x="324" y="53" text-anchor="middle" class="s-tc">SVM 区间（8T）· 元数据区在其尾部 32M</text>
+      <text x="324" y="66" text-anchor="middle" class="s-tc mono-t">entity 元数据 + user context(64K×N)</text>
+      <rect x="444" y="36" width="300" height="38" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.6"/>
+      <text x="594" y="53" text-anchor="middle" class="s-tc" fill="#1d4ed8" font-weight="700">GVM 对称堆预留区</text>
+      <text x="594" y="66" text-anchor="middle" class="s-tc mono-t" fill="#1d4ed8">0x14_0000_0000_0000 (20T) ~ 0x18_0000_0000_0000 (24T)</text>
+      <rect style="fill:var(--soft);stroke:var(--line)" x="744" y="36" width="192" height="38" rx="6"/>
+      <text x="840" y="53" text-anchor="middle" class="s-tc">…（24T 边界）</text>
+      <text x="840" y="66" text-anchor="middle" class="s-tc mono-t">Host 连接区另在 48T+16T</text>
+
+      <!-- 对齐虚线标注 -->
+      <path d="M594 74 V96" class="s-edge" marker-end="url(#ah-b)" stroke="#2563eb"/>
+      <text x="604" y="92" class="s-tc" fill="#1d4ed8">reserve_heap 在此预留 GVA</text>
+
+      <!-- 四个 PE 堆 -->
+      <g id="peHeaps">
+        <!-- PE0 -->
+        <g transform="translate(24,104)">
+          <rect width="204" height="252" rx="12" class="s-panel"/>
+          <rect x="0" y="0" width="204" height="30" rx="12" fill="#2563eb"/>
+          <rect x="0" y="18" width="204" height="12" fill="#2563eb"/>
+          <text x="102" y="20" text-anchor="middle" font-size="12.5" font-weight="800" fill="#fff">PE 0（本 PE）</text>
+          <rect x="12" y="42" width="180" height="30" rx="6" fill="#fde8e8" stroke="#e11d48"/>
+          <text x="102" y="61" text-anchor="middle" class="s-tc">signal 区（512B 起步）</text>
+          <rect x="12" y="80" width="180" height="54" rx="6" fill="#dbeafe" stroke="#2563eb"/>
+          <text x="102" y="102" text-anchor="middle" class="s-t" font-size="12">对象 A（矩阵分片）</text>
+          <text x="102" y="119" text-anchor="middle" class="s-tc mono-t">堆内偏移 = 0x1000</text>
+          <rect x="12" y="142" width="180" height="54" rx="6" fill="#dcfce7" stroke="#16a34a"/>
+          <text x="102" y="164" text-anchor="middle" class="s-t" font-size="12">对象 B（KV cache）</text>
+          <text x="102" y="181" text-anchor="middle" class="s-tc mono-t">堆内偏移 = 0x3000</text>
+          <rect style="fill:var(--soft);stroke:var(--line)" x="12" y="204" width="180" height="36" rx="6"/>
+          <text x="102" y="226" text-anchor="middle" class="s-tc">空闲（first-fit 分配）</text>
+        </g>
+        <!-- PE1 -->
+        <g transform="translate(264,104)">
+          <rect width="204" height="252" rx="12" class="s-panel"/>
+          <rect x="0" y="0" width="204" height="30" rx="12" fill="#64748b"/>
+          <rect x="0" y="18" width="204" height="12" fill="#64748b"/>
+          <text x="102" y="20" text-anchor="middle" font-size="12.5" font-weight="800" fill="#fff">PE 1</text>
+          <rect x="12" y="42" width="180" height="30" rx="6" fill="#fde8e8" stroke="#e11d48"/>
+          <text x="102" y="61" text-anchor="middle" class="s-tc">signal 区</text>
+          <rect x="12" y="80" width="180" height="54" rx="6" fill="#dbeafe" stroke="#2563eb"/>
+          <text x="102" y="102" text-anchor="middle" class="s-t" font-size="12">对象 A（同偏移!）</text>
+          <text x="102" y="119" text-anchor="middle" class="s-tc mono-t">0x1000</text>
+          <rect x="12" y="142" width="180" height="54" rx="6" fill="#dcfce7" stroke="#16a34a"/>
+          <text x="102" y="164" text-anchor="middle" class="s-t" font-size="12">对象 B（同偏移!）</text>
+          <text x="102" y="181" text-anchor="middle" class="s-tc mono-t">0x3000</text>
+          <rect style="fill:var(--soft);stroke:var(--line)" x="12" y="204" width="180" height="36" rx="6"/>
+          <text x="102" y="226" text-anchor="middle" class="s-tc">空闲</text>
+        </g>
+        <!-- PE2 -->
+        <g transform="translate(504,104)">
+          <rect width="204" height="252" rx="12" class="s-panel"/>
+          <rect x="0" y="0" width="204" height="30" rx="12" fill="#64748b"/>
+          <rect x="0" y="18" width="204" height="12" fill="#64748b"/>
+          <text x="102" y="20" text-anchor="middle" font-size="12.5" font-weight="800" fill="#fff">PE 2</text>
+          <rect x="12" y="42" width="180" height="30" rx="6" fill="#fde8e8" stroke="#e11d48"/>
+          <text x="102" y="61" text-anchor="middle" class="s-tc">signal 区</text>
+          <rect x="12" y="80" width="180" height="54" rx="6" fill="#dbeafe" stroke="#2563eb"/>
+          <text x="102" y="102" text-anchor="middle" class="s-t" font-size="12">对象 A（同偏移!）</text>
+          <text x="102" y="119" text-anchor="middle" class="s-tc mono-t">0x1000</text>
+          <rect x="12" y="142" width="180" height="54" rx="6" fill="#dcfce7" stroke="#16a34a"/>
+          <text x="102" y="164" text-anchor="middle" class="s-t" font-size="12">对象 B（同偏移!）</text>
+          <text x="102" y="181" text-anchor="middle" class="s-tc mono-t">0x3000</text>
+          <rect style="fill:var(--soft);stroke:var(--line)" x="12" y="204" width="180" height="36" rx="6"/>
+          <text x="102" y="226" text-anchor="middle" class="s-tc">空闲</text>
+        </g>
+        <!-- PE3 -->
+        <g transform="translate(744,104)">
+          <rect width="204" height="252" rx="12" class="s-panel"/>
+          <rect x="0" y="0" width="204" height="30" rx="12" fill="#64748b"/>
+          <rect x="0" y="18" width="204" height="12" fill="#64748b"/>
+          <text x="102" y="20" text-anchor="middle" font-size="12.5" font-weight="800" fill="#fff">PE 3（可为对端）</text>
+          <rect x="12" y="42" width="180" height="30" rx="6" fill="#fde8e8" stroke="#e11d48"/>
+          <text x="102" y="61" text-anchor="middle" class="s-tc">signal 区</text>
+          <rect x="12" y="80" width="180" height="54" rx="6" fill="#dbeafe" stroke="#2563eb"/>
+          <text x="102" y="102" text-anchor="middle" class="s-t" font-size="12">对象 A（同偏移!）</text>
+          <text x="102" y="119" text-anchor="middle" class="s-tc mono-t">0x1000</text>
+          <rect x="12" y="142" width="180" height="54" rx="6" fill="#dcfce7" stroke="#16a34a"/>
+          <text x="102" y="164" text-anchor="middle" class="s-t" font-size="12">对象 B（同偏移!）</text>
+          <text x="102" y="181" text-anchor="middle" class="s-tc mono-t">0x3000</text>
+          <rect style="fill:var(--soft);stroke:var(--line)" x="12" y="204" width="180" height="36" rx="6"/>
+          <text x="102" y="226" text-anchor="middle" class="s-tc">空闲</text>
+        </g>
+      </g>
+
+      <!-- 同偏移对齐虚线 -->
+      <path d="M228 200 H264" class="s-edge s-dash" stroke="#2563eb" marker-end="url(#ah-b)"/>
+      <path d="M468 200 H504" class="s-edge s-dash" stroke="#2563eb"/>
+      <path d="M708 200 H744" class="s-edge s-dash" stroke="#2563eb"/>
+      <text x="480" y="388" text-anchor="middle" class="s-tc" fill="#1d4ed8">↑ 同序同大小 malloc ⇒ 相同偏移（对称性由来）</text>
+
+      <!-- 换算箭头 PE0 对象A -> PE2 对象A -->
+      <path d="M216 176 C 340 60, 620 60, 744 176" class="s-edge" stroke="#e11d48" stroke-width="2" marker-end="url(#ah-r)" fill="none"/>
+      <rect x="380" y="40" width="220" height="26" rx="13" fill="#fde8e8" stroke="#e11d48"/>
+      <text x="490" y="57" text-anchor="middle" font-size="12" font-weight="700" fill="#be123c">aclshmem_ptr(&amp;A, pe=2) 一步换算</text>
+
+      <!-- 公式面板 -->
+      <g transform="translate(24,404)">
+        <rect width="912" height="118" rx="12" class="s-soft"/>
+        <text x="16" y="26" class="s-t">地址换算核心（src/device/gm2gm/engine/shmem_device_mte.hpp · aclshmem_ptr）</text>
+        <text style="fill:var(--ink)" x="16" y="54" class="s-tc mono-t" font-size="11.5">offset      = ptr − device_state-&gt;heap_base                 <tspan fill="#94a3b8">// 回到"户型内偏移"</tspan></text>
+        <text style="fill:var(--ink)" x="16" y="74" class="s-tc mono-t" font-size="11.5">remote_ptr  = device_state-&gt;p2p_device_heap_base[pe] + offset   <tspan fill="#94a3b8">// 换到目标 PE 的楼里</tspan></text>
+        <text x="16" y="100" class="s-tc">另有 rdma_device_heap_base[] / sdma_device_heap_base[] / p2p_host_heap_base[] —— 每种引擎一张"楼号→基址"表，由 init 阶段 exchange_slice 交换得来。</text>
+      </g>
+
+      <!-- 底部要点 -->
+      <g transform="translate(24,536)">
+        <rect width="292" height="66" rx="10" class="s-node"/>
+        <text x="146" y="24" text-anchor="middle" class="s-t" font-size="12.3">每 PE 占 1G 对齐窗口</text>
+        <text x="146" y="42" text-anchor="middle" class="s-tc">heap_base = hbm_gva +</text>
+        <text x="146" y="57" text-anchor="middle" class="s-tc mono-t">ALIGN_UP(heap_size,1G) × my_pe</text>
+      </g>
+      <g transform="translate(334,536)">
+        <rect width="292" height="66" rx="10" class="s-node"/>
+        <text x="148" y="24" text-anchor="middle" class="s-t" font-size="12.3">2MB 大页对齐</text>
+        <text x="148" y="42" text-anchor="middle" class="s-tc">DEVICE_LARGE_PAGE_SIZE=2M</text>
+        <text x="148" y="57" text-anchor="middle" class="s-tc">不对称分配会在日志里告警</text>
+      </g>
+      <g transform="translate(644,536)">
+        <rect width="292" height="66" rx="10" class="s-node"/>
+        <text x="146" y="24" text-anchor="middle" class="s-t" font-size="12.3">堆后紧跟 EXTRA 区</text>
+        <text x="146" y="42" text-anchor="middle" class="s-tc">sync_pool · team · signal 槽</text>
+        <text x="146" y="57" text-anchor="middle" class="s-tc">按 2M 对齐（第 7 章展开）</text>
+      </g>
+    </svg>
+    </div>
+    <div class="foot">对称堆在 <b>GVM（20T–24T）</b> 预留区中顺序排布：PE k 的窗口 = 基址 + k×ALIGN_UP(heap_size,1G)。注意 <b>heap_size 各 PE 必须相同</b>（不对称时退化处理，日志告警）。</div>
+  </div>
+
+  <h3 id="s-calc">3.1 交互：亲手做一次地址换算</h3>
+  <p class="small">模拟 <code class="inline">aclshmem_ptr</code>：本 PE 固定为 0，GVA 基址 0x140000000000，堆按 1G 对齐排布。</p>
+  <div class="ctrl">
+    <label>目标 PE</label>
+    <select id="calcPe"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option></select>
+    <label>堆大小</label>
+    <select id="calcHeap"><option value="1">1 GB</option><option value="2">2 GB</option><option value="4">4 GB</option></select>
+    <label>对象堆内偏移(hex)</label>
+    <input type="text" id="calcOff" value="0x1000" size="10">
+    <button class="btn sm" id="calcBtn">换算 →</button>
+  </div>
+  <div class="out mono-t" id="calcOut" style="font-size:12.8px;line-height:1.9">点击"换算"查看结果。</div>
+
+  <details class="deep"><summary>🔬 深入：地址空间常量表（src/host/entity/mem_entity_def.h）</summary><div class="body">
+    <table class="tbl">
+      <tr><th>常量</th><th>值</th><th>含义</th></tr>
+      <tr><td class="mono-t">HYBM_DEVICE_VA_START</td><td class="mono-t">0x100000000000 (16T)</td><td>NPU 设备 VA 起点，区间 8T</td></tr>
+      <tr><td class="mono-t">HYBM_GVM_START/END</td><td class="mono-t">20T ~ 24T</td><td>GVM 全局虚拟内存（对称堆预留区）</td></tr>
+      <tr><td class="mono-t">HYBM_HOST_CONN_START</td><td class="mono-t">0x300000000000 (48T) + 16T</td><td>Host 内存连接映射区（D2rH/rH2D 用）</td></tr>
+      <tr><td class="mono-t">SMEM_SHM_DEVICE_END_ADDR</td><td class="mono-t">0x180000000000 − 1G</td><td>SVM 结束；再往下 32M 是元数据区</td></tr>
+      <tr><td class="mono-t">SMEM_SHM_DEVICE_META_ADDR</td><td>END − 32M</td><td>128B×511(entity) 元数据表 + 全局头</td></tr>
+      <tr><td class="mono-t">SMEM_SHM_DEVICE_USER_CONTEXT_ADDR</td><td>META + 64K</td><td>每 entity 64K user context，device_state 就放在这里</td></tr>
+      <tr><td class="mono-t">ACLSHMEM_EXTRA_SIZE</td><td>对齐 2M</td><td>堆尾附加区：signal(512B) + sync(5MB/2048 team) + team(1MB)</td></tr>
+    </table>
+    <p class="small">为什么元数据放<b>固定地址</b>？因为 device 侧代码没有"全局变量传参"机制——kernel 里用 <code class="inline">aclshmemi_get_state()</code> 直接读固定 VA，即拿到 Host 写好的运行时状态（mype、各 PE heap_base、topo_list、引擎配置……）。</p>
+  </div></details>
+
+  <details class="deep"><summary>🔬 深入：为什么"同序同大小 malloc"能保证偏移一致？</summary><div class="body">
+    <p>SHMEM 的分配器是<b>确定性 first-fit</b>：从堆底开始，找第一个能放下的洞。只要所有 PE 执行<b>完全相同的分配/释放序列</b>，分配器内部状态机就完全同步，任何时刻同一"分配序号"对应的偏移在所有 PE 上相同。这正是 init 文档强调三条铁律的原因——一次不对称的 malloc 就会让两边的"户型图"从此错位。</p>
+    <p>配套机制：每次 <code class="inline">aclshmem_malloc/free</code> 返回前，都会在<b>控制面</b>做一次全体 barrier（Config Store 上的 GroupBarrier），确保所有 PE 都完成本轮分配再继续——防止快慢进程导致的分配序列分叉。</p>
+    <span class="src">src/host/mem/heap · docs/principles/init_finalize.md §3.4</span>
+  </div></details>
+</section>
+
+<!-- ============ CH4 控制面 Bootstrap ============ -->
+<section class="chapter" id="ch4">
+  <h2><span class="n ctrl">4</span>控制面：Bootstrap 与 Config Store</h2>
+  <p class="lede">运行数据面前，必须先回答三个问题：谁参与（PE 发现）、内存登记在哪（元数据交换）、大家进度对齐了吗（控制 barrier）。这些全部发生在 <b>CPU 侧控制面</b>。</p>
+
+  <div class="callout ana"><span class="ic">🌰</span><div><b>类比</b>：Config Store 就像工地<b>项目部（PE 0 的总台登记簿）</b>——各施工队（PE）先到总台报到（connect + 握手），之后所有"材料清单"（内存 slice 描述符）都抄送到登记簿上互相传阅（allgather），每完成一道工序都到总台打个卡（barrier）。而真正开工后的材料运输（数据面）走的是另一套系统，不经过项目部。</div></div>
+
+  <div class="fig">
+    <div class="cap">🖼️ <b>图 4-1 · Config Store 星型拓扑与消息帧格式</b>（Default / UniqueID 模式；MPI 模式不经过此路径）</div>
+    <div class="body">
+    <svg viewBox="0 0 960 450" role="img" aria-label="Config Store 星型拓扑">
+      <!-- 左：星型拓扑 -->
+      <rect x="10" y="10" width="560" height="430" rx="14" class="s-soft"/>
+      <text x="26" y="34" class="s-t">星型拓扑：PE 0 为中心</text>
+
+      <!-- PE0 server -->
+      <g transform="translate(36,120)">
+        <rect width="220" height="230" rx="12" fill="#eef4ff" stroke="#2563eb" stroke-width="1.6"/>
+        <text x="110" y="26" text-anchor="middle" class="s-t" fill="#1d4ed8">PE 0 · AccStoreServer</text>
+        <text x="110" y="44" text-anchor="middle" class="s-tc">listener 监听 listenIp:listenPort</text>
+        <rect style="fill:var(--card);stroke:var(--edge)" x="14" y="58" width="192" height="150" rx="8"/>
+        <text x="110" y="76" text-anchor="middle" class="s-tc" font-weight="700">内存 KV 表</text>
+        <text x="24" y="96" class="s-tc mono-t" font-size="10">SHM_(0)_S_1_2_BA : 3</text>
+        <text x="24" y="112" class="s-tc mono-t" font-size="10">SHM_(0)_S_1_2_BW : ok</text>
+        <text x="24" y="128" class="s-tc mono-t" font-size="10">SHM_(0)_S_1_3_GA : [r0..r3]</text>
+        <text x="24" y="144" class="s-tc mono-t" font-size="10">SHM_(0)_S_1_3_GW : ok</text>
+        <text x="24" y="164" class="s-tc">barrier / allgather 都在这张表上实现</text>
+        <text x="24" y="182" class="s-tc">（SmemNetGroupEngine）</text>
+        <text x="24" y="200" class="s-tc">TLS 默认加密所有键值</text>
+      </g>
+
+      <!-- clients -->
+      <g transform="translate(420,36)"><rect width="130" height="52" rx="10" class="s-node"/>
+        <text x="65" y="24" text-anchor="middle" class="s-t" font-size="12.3">PE 1</text>
+        <text x="65" y="41" text-anchor="middle" class="s-tc">TcpConfigStore client</text></g>
+      <g transform="translate(420,140)"><rect width="130" height="52" rx="10" class="s-node"/>
+        <text x="65" y="24" text-anchor="middle" class="s-t" font-size="12.3">PE 2</text>
+        <text x="65" y="41" text-anchor="middle" class="s-tc">TcpConfigStore client</text></g>
+      <g transform="translate(420,244)"><rect width="130" height="52" rx="10" class="s-node"/>
+        <text x="65" y="24" text-anchor="middle" class="s-t" font-size="12.3">PE 3</text>
+        <text x="65" y="41" text-anchor="middle" class="s-tc">TcpConfigStore client</text></g>
+      <g transform="translate(420,348)"><rect width="130" height="52" rx="10" class="s-node"/>
+        <text x="65" y="24" text-anchor="middle" class="s-t" font-size="12.3">PE n-1</text>
+        <text x="65" y="41" text-anchor="middle" class="s-tc">TcpConfigStore client</text></g>
+      <!-- PE0 self client -->
+      <g transform="translate(60,382)"><rect width="170" height="48" rx="10" fill="#eef4ff" stroke="#2563eb" stroke-dasharray="5 4"/>
+        <text x="85" y="22" text-anchor="middle" class="s-t" font-size="12">PE 0 自己也有 client</text>
+        <text x="85" y="38" text-anchor="middle" class="s-tc">连向与 listener 相同的地址</text></g>
+
+      <!-- 连接线 -->
+      <path d="M420 62 C 340 80, 300 120, 258 160" class="s-edge" stroke="#2563eb" marker-end="url(#ah-b)"/>
+      <path d="M420 166 C 350 180, 300 200, 258 210" class="s-edge" stroke="#2563eb" marker-end="url(#ah-b)"/>
+      <path d="M420 270 C 350 262, 300 240, 258 240" class="s-edge" stroke="#2563eb" marker-end="url(#ah-b)"/>
+      <path d="M420 374 C 340 340, 300 290, 258 260" class="s-edge" stroke="#2563eb" marker-end="url(#ah-b)"/>
+      <path d="M230 382 C 240 350, 236 330, 232 316" class="s-edge s-dash" stroke="#2563eb"/>
+
+      <text x="348" y="120" class="s-tc" fill="#1d4ed8" text-anchor="middle">ConnectToPeerServer</text>
+      <text x="348" y="134" class="s-tc mono-t" fill="#1d4ed8" text-anchor="middle" font-size="10">AccConnReq{magic,ver,rankId}</text>
+      <rect x="330" y="392" width="220" height="26" rx="13" fill="#fde8e8" stroke="#e11d48"/>
+      <text x="440" y="409" text-anchor="middle" font-size="11.5" fill="#be123c" font-weight="700">重试上限 = shm_init_timeout（默认 120s）</text>
+
+      <!-- 右：消息帧 -->
+      <g transform="translate(590,10)">
+        <rect width="360" height="252" rx="14" class="s-panel"/>
+        <text x="16" y="26" class="s-t">SmemMessage 线上帧（小端）</text>
+        <g font-size="10.5" class="mono-t">
+          <rect x="16" y="40" width="328" height="24" rx="5" fill="#dbeafe"/><text x="24" y="56">totalSize: u64（帧总长）</text>
+          <rect x="16" y="68" width="328" height="24" rx="5" fill="#dbeafe"/><text x="24" y="84">userDef: i64（GET 超时 ms / 透传标识）</text>
+          <rect x="16" y="96" width="328" height="24" rx="5" fill="#e2e8f0"/><text x="24" y="112">mt: i16（消息类型 = KV 操作码）</text>
+          <rect x="16" y="124" width="328" height="24" rx="5" fill="#dcfce7"/><text x="24" y="140">keyCount: u64</text>
+          <rect x="16" y="152" width="328" height="24" rx="5" fill="#dcfce7"/><text x="24" y="168">keys[]: {u64 len, bytes}（≤2048B 服务端）</text>
+          <rect x="16" y="180" width="328" height="24" rx="5" fill="#fef3e2"/><text x="24" y="196">valueCount: u64</text>
+          <rect x="16" y="208" width="328" height="24" rx="5" fill="#fef3e2"/><text x="24" y="224">values[]: {u64 len, bytes}（≤64MB）</text>
+        </g>
+      </g>
+      <!-- 右下：操作码 -->
+      <g transform="translate(590,278)">
+        <rect width="360" height="162" rx="14" class="s-panel"/>
+        <text x="16" y="26" class="s-t">KV 操作码（acc_msg_type）</text>
+        <g>
+          <rect x="16" y="42" width="104" height="30" rx="8" fill="#eef4ff" stroke="#2563eb"/><text x="68" y="61" text-anchor="middle" class="s-tc" font-weight="700">SET 写</text>
+          <rect x="128" y="42" width="104" height="30" rx="8" fill="#eef4ff" stroke="#2563eb"/><text x="180" y="61" text-anchor="middle" class="s-tc" font-weight="700">GET 阻塞读</text>
+          <rect x="240" y="42" width="104" height="30" rx="8" fill="#fde8e8" stroke="#e11d48"/><text x="292" y="61" text-anchor="middle" class="s-tc" font-weight="700">ADD 原子加</text>
+          <rect x="16" y="80" width="104" height="30" rx="8" fill="#dcfce7" stroke="#16a34a"/><text x="68" y="99" text-anchor="middle" class="s-tc" font-weight="700">APPEND 追加</text>
+          <rect x="128" y="80" width="104" height="30" rx="8" fill="#f3eefe" stroke="#7c3aed"/><text x="180" y="99" text-anchor="middle" class="s-tc" font-weight="700">CAS 交换</text>
+          <rect x="240" y="80" width="104" height="30" rx="8" fill="#e2e8f0" stroke="#64748b"/><text x="292" y="99" text-anchor="middle" class="s-tc" font-weight="700">REMOVE</text>
+          <text x="16" y="136" class="s-tc">barrier = ADD + SET + GET；allgather = APPEND + SET + GET</text>
+          <text x="16" y="152" class="s-tc">值域支持 u64 整数与 bytes；ADD 返回累加后的值</text>
+        </g>
+      </g>
+    </svg>
+    </div>
+    <div class="foot">三个 init 模式：UNIQUEID（UID 广播）/ DEFAULT（显式 tcp://ip:port）/ MPI（用 MPI_Comm 做控制面，不加载 config_store 插件）。插件以 <b>dlopen</b> 方式加载（aclshmem_bootstrap_config_store.so）。</div>
+  </div>
+
+  <h3 id="s-kvbar">4.1 GroupBarrier：在一张 KV 表上实现集合 barrier</h3>
+  <p>以 4 个 PE 为例（组编号 1、轮次 2，键前缀 <code class="inline">SHM_(0)_S_1_2_</code>）：</p>
+  <div class="stepper">
+    <div class="steps" id="barKvSteps">
+      <button class="active" data-s="0"><span class="no">1</span><span><b>各 PE 并发 ADD</b><br><span class="small">ADD _BA 键 +1，原子累加</span></span></button>
+      <button data-s="1"><span class="no">2</span><span><b>最后一个 PE 触发</b><br><span class="small">ADD 返回值 == rankSize</span></span></button>
+      <button data-s="2"><span class="no">3</span><span><b>置完成标志</b><br><span class="small">SET _BW = ok</span></span></button>
+      <button data-s="3"><span class="no">4</span><span><b>全员轮询 GET</b><br><span class="small">GET _BW 直到 ok（带超时）</span></span></button>
+    </div>
+    <div class="stepdetail" id="barKvDetail"></div>
+  </div>
+
+  <div class="callout key"><span class="ic">🔑</span><div><b>为什么用"计数 + 完成位"而不是删除键？</b>每轮 barrier 使用带<b>轮次号 sn</b>的新键（_1_2_、_1_3_……），避免上一轮残留值干扰；每超过 2 轮清理一次旧键。GET 的超时来自 <code class="inline">control_operation_timeout</code>（帧的 userDef 字段，毫秒）。这就是 init/malloc 对齐的"心跳"。</div></div>
+
+  <details class="deep"><summary>🔬 深入：TCP 细节与 UniqueID 生成</summary><div class="body">
+    <ul>
+      <li><b>连接参数</b>：TCP_NODELAY；同步包重试 TCP_SYNCNT=1；SO_RCVTIMEO=1800s；非 PE 0 重试次数 = <code class="inline">shm_init_timeout</code>（每次 sleep 1s），PE 0 client 固定 60 次。</li>
+      <li><b>握手</b>：accept 后校验 <code class="inline">AccConnReq.magic / version</code> 与服务端 Options 一致，否则拒绝——所以 UID 必须<b>字节级一致</b>地广播。</li>
+      <li><b>UniqueID</b>：由 PE 0 调 <code class="inline">aclshmemx_get_uniqueid</code> 生成（pre-init 路径），内含 addr（ip:port）与 magic；受 <code class="inline">SHMEM_UID_SESSION_ID</code> / <code class="inline">SHMEM_UID_SOCK_IFNAME</code> 影响绑定哪个网卡。库不负责广播，应用自行传递。</li>
+      <li><b>TLS</b>：默认开启，<code class="inline">aclshmemx_set_conf_store_tls(false, NULL, 0)</code> 可关（仅建议可信内网）。</li>
+    </ul>
+    <span class="src">src/host/bootstrap/config_store/</span><span class="src">docs/principles/config_store_bootstrap.md</span>
+  </div></details>
+</section>
+
+<!-- ============ CH5 初始化全流程 ============ -->
+<section class="chapter" id="ch5">
+  <h2><span class="n ctrl">5</span>初始化全流程：从 init 到能通信</h2>
+  <p class="lede">所有 PE 对称调用 <code class="inline">aclshmemx_init_attr</code>。点击下面每一步，右侧会展开该步"发生了什么 + 对应源码"。</p>
+
+  <div class="stepper">
+    <div class="steps" id="initSteps">
+      <button class="active" data-s="0"><span class="no">1</span><span><b>instance 上下文</b><br><span class="small">多实例 instance_id 隔离</span></span></button>
+      <button data-s="1"><span class="no">2</span><span><b>参数校验</b><br><span class="small">check_attr · 版本兼容</span></span></button>
+      <button data-s="2"><span class="no">3</span><span><b>Bootstrap 建链</b><br><span class="small">Config Store / MPI 插件加载</span></span></button>
+      <button data-s="3"><span class="no">4</span><span><b>state 初始化</b><br><span class="small">mype/npes/heap_size + ACL stream</span></span></button>
+      <button data-s="4"><span class="no">5</span><span><b>init_backend</b><br><span class="small">引用计数 · 平台后端</span></span></button>
+      <button data-s="5"><span class="no">6</span><span><b>建堆（核心）</b><br><span class="small">reserve → exchange_slice → mmap</span></span></button>
+      <button data-s="6"><span class="no">7</span><span><b>子模块就绪</b><br><span class="small">分配器/signal/team/同步池</span></span></button>
+      <button data-s="7"><span class="no">8</span><span><b>收尾对齐</b><br><span class="small">update_device_state + barrier</span></span></button>
+    </div>
+    <div class="stepdetail" id="initDetail"></div>
+  </div>
+
+  <div class="fig">
+    <div class="cap">🖼️ <b>图 5-1 · 第 6 步核心：exchange_slice（allgather 交换内存描述符）</b></div>
+    <div class="body">
+    <svg viewBox="0 0 960 250" role="img" aria-label="exchange_slice 流程">
+      <ellipse cx="480" cy="128" rx="180" ry="78" fill="#eef4ff" stroke="#2563eb" stroke-width="1.5"/>
+      <text x="480" y="112" text-anchor="middle" class="s-t" fill="#1d4ed8">PE 0 KV 表（GroupAllGather）</text>
+      <text x="480" y="132" text-anchor="middle" class="s-tc">APPEND {rankId + slice/entity 描述符}</text>
+      <text x="480" y="150" text-anchor="middle" class="s-tc">最后一个到达者 SET _GW = ok</text>
+      <g id="exPe">
+        <g transform="translate(24,50)"><rect width="110" height="48" rx="10" class="s-node"/><text x="55" y="22" text-anchor="middle" class="s-t" font-size="12">PE 0</text><text x="55" y="38" text-anchor="middle" class="s-tc">export</text></g>
+        <g transform="translate(24,152)"><rect width="110" height="48" rx="10" class="s-node"/><text x="55" y="22" text-anchor="middle" class="s-t" font-size="12">PE 1</text><text x="55" y="38" text-anchor="middle" class="s-tc">export</text></g>
+        <g transform="translate(826,50)"><rect width="110" height="48" rx="10" class="s-node"/><text x="881" y="22" text-anchor="middle" class="s-t" font-size="12">PE 2</text><text x="881" y="38" text-anchor="middle" class="s-tc">export</text></g>
+        <g transform="translate(826,152)"><rect width="110" height="48" rx="10" class="s-node"/><text x="881" y="22" text-anchor="middle" class="s-t" font-size="12">PE n-1</text><text x="881" y="38" text-anchor="middle" class="s-tc">export</text></g>
+      </g>
+      <path d="M134 74 C 240 90, 300 100, 302 106" class="s-edge" stroke="#2563eb" marker-end="url(#ah-b)"/>
+      <path d="M134 176 C 240 160, 300 150, 302 146" class="s-edge" stroke="#2563eb" marker-end="url(#ah-b)"/>
+      <path d="M826 74 C 720 90, 660 100, 658 106" class="s-edge" stroke="#2563eb" marker-end="url(#ah-b)"/>
+      <path d="M826 176 C 720 160, 660 150, 658 146" class="s-edge" stroke="#2563eb" marker-end="url(#ah-b)"/>
+      <text x="480" y="228" text-anchor="middle" class="s-tc">拿到全量描述符后：hybm_import（导入对端 slice）→ hybm_mmap（映射进本端地址空间）→ 填 p2p/rdma/sdma 三套 heap_base 数组 → barrier 收口</text>
+    </svg>
+    </div>
+    <div class="foot">exchange_slice 之后就具备了"单边 RMA"的地址基础；exchange_entity 同理交换内存域句柄。</div>
+  </div>
+
+  <div class="callout warn"><span class="ic">⚠️</span><div><b>排障速查</b>：init 卡在连 rank 0 → 查 ip_port/UID 连通性、加大 shm_init_timeout；barrier/allgather 超时 → 确认所有 rank 都已进入 init、加大 control_operation_timeout；RMA 地址错乱 → 检查各 rank malloc/free 是否同序同大小；多实例端口冲突 → 用 SHMEM_INSTANCE_PORT_RANGE 且模板端口写 0。</div></div>
+
+  <details class="deep"><summary>🔬 深入：finalize 的"反向拆除"为什么要在拆 Bootstrap 前做一次 barrier？</summary><div class="body">
+    <p>finalize 顺序：子模块 → remove/release 对称堆 → finalize_device_state → release_aclshmem_entity → ACL stream → <b>aclshmemi_control_barrier_all</b> → Bootstrap → init_manager。加粗的这次 barrier 是"散伙签字"：如果 PE 0 先拆掉了 Config Store listener，晚到的 PE 会卡死在 GET 轮询直到超时。所以必须<b>所有人到齐 → 再拆总台</b>。多实例时这些全局资源按引用计数共享，最后一个 instance 才真正释放。</p>
+    <span class="src">src/host/init/shmem_init.cpp · aclshmem_finalize</span>
+  </div></details>
+</section>
+
+<!-- ============ CH6 四大通信引擎 ============ -->
+<section class="chapter" id="ch6">
+  <h2><span class="n udma">6</span>数据面四大引擎：MTE · SDMA · RDMA · UDMA</h2>
+  <p class="lede">这是全书硬件原理的核心。四个引擎对应四条不同的硬件通路，编程模型各不相同——但都被同一套对称地址换算喂进数据。</p>
+
+  <div class="callout ana"><span class="ic">🌰</span><div><b>类比一张"物流网络"</b>：<br>🚚 <b>MTE</b> = 你自己的手推车——最快，但要你亲自推（占 AICore），且每次推的量受手推车大小限制（UB staging）；<br>📋 <b>SDMA</b> = 后勤搬家公司——填一张工单（SQE）塞进它的排队窗口，公司自己搬，你去干别的；<br>✈️ <b>RDMA/RoCE</b> = 跨城货运航线——要报关（WQE + rkey）、走机场（网卡）、有回执（CQE），距离远但一次能运很多；<br>🏭 <b>UDMA/UB</b> = 新一代统一物流网（灵衢）——每个仓库有"码头号"（jetty）和"提货令牌"（token），全网统一编址（EID），还支持"到货自动发短信"（WRITE_WITH_NOTIFY）和"入仓自动合并"（WRITE_WITH_REDUCE）。</div></div>
+
+  <div class="tabwrap" data-group="engines">
+    <div class="tabs">
+      <button data-tab="mte" data-accent="mte" class="active">🚚 MTE · 片上搬运</button>
+      <button data-tab="sdma" data-accent="sdma">📋 SDMA · 系统DMA</button>
+      <button data-tab="rdma" data-accent="rdma">✈️ RDMA · RoCE 跨节点</button>
+      <button data-tab="udma" data-accent="udma">🏭 UDMA · UB 灵衢</button>
+    </div>
+
+    <!-- ================= MTE ================= -->
+    <div class="tabpanel active" data-panel="mte">
+      <h3 id="s-mte" style="margin-top:4px">MTE：Memory Transfer Engine（AICore 旁路搬运引擎）</h3>
+      <p><b>硬件本体</b>：每个 AICore 旁挂的专用搬运算术单元，分两个流水级——<span class="chip mte">MTE2：GM → UB</span> <span class="chip mte">MTE3：UB → GM</span>。它不是独立设备，而是核内流水线的一部分，因此<b>启动延迟最低</b>；代价是要占用 AICore 的执行流（发搬运指令、等事件）。</p>
+      <p><b>跨卡能力</b>：在 910 上，MTE 的 GM 访问可以经 <b>HCCS</b> 直达<b>同机其他 NPU 的 GM</b>（对端内存被映射进本地可寻址空间，load/store 语义）；A3 片内双 Die 之间走 <b>SIO</b>。所以"远端读"在本机范围内其实是一条普通访存路径。</p>
+
+      <div class="fig">
+        <div class="cap">🖼️ <b>图 6-1 · MTE 数据面：UB staging + 双流水级乒乓</b>（点 ▶ 观看数据块流动）</div>
+        <div class="body">
+        <svg viewBox="0 0 960 430" id="mteSvg" role="img" aria-label="MTE 通路图">
+          <!-- 本地 AICore -->
+          <rect x="16" y="24" width="212" height="360" rx="14" class="s-soft"/>
+          <text x="32" y="48" class="s-t">本地 AICore</text>
+          <rect x="36" y="64" width="172" height="44" rx="9" class="s-node"/>
+          <text x="122" y="90" text-anchor="middle" class="s-tc">Vector / Cube 计算单元</text>
+          <!-- UB staging -->
+          <rect x="36" y="128" width="172" height="130" rx="9" fill="#fef3e2" stroke="#d97706" stroke-width="1.5"/>
+          <text x="122" y="150" text-anchor="middle" class="s-t" fill="#b45309">UB 暂存区（staging）</text>
+          <text x="122" y="168" text-anchor="middle" class="s-tc">ub_size 字节（≥64B · 64B 对齐）</text>
+          <rect x="52" y="182" width="140" height="26" rx="5" fill="#fbbf24" opacity=".85" id="ubCell"/>
+          <text x="122" y="199" text-anchor="middle" font-size="10.5" font-weight="700" fill="#78350f">当前分块 block_size</text>
+          <text x="122" y="234" text-anchor="middle" class="s-tc">aclshmemx_set_mte_config(offset, ub_size, sync_id)</text>
+          <rect x="36" y="278" width="172" height="84" rx="9" class="s-node"/>
+          <text x="122" y="302" text-anchor="middle" class="s-tc">SetFlag / WaitFlag 硬件事件</text>
+          <text x="122" y="320" text-anchor="middle" class="s-tc mono-t">MTE2_MTE3 · MTE3_MTE2</text>
+          <text x="122" y="338" text-anchor="middle" class="s-tc">sync_id = TEventID</text>
+
+          <!-- MTE2 / MTE3 -->
+          <rect x="300" y="80" width="160" height="64" rx="10" fill="#fef3e2" stroke="#d97706" stroke-width="1.6"/>
+          <text x="380" y="106" text-anchor="middle" class="s-t" fill="#b45309">MTE2</text>
+          <text x="380" y="126" text-anchor="middle" class="s-tc">GM → UB 搬运级</text>
+          <rect x="300" y="240" width="160" height="64" rx="10" fill="#fef3e2" stroke="#d97706" stroke-width="1.6"/>
+          <text x="380" y="266" text-anchor="middle" class="s-t" fill="#b45309">MTE3</text>
+          <text x="380" y="286" text-anchor="middle" class="s-tc">UB → GM 搬运级</text>
+          <!-- flag chips -->
+          <rect x="308" y="164" width="144" height="28" rx="14" fill="#fde8e8" stroke="#e11d48" id="mteFlag1" opacity=".25"/>
+          <text x="380" y="182" text-anchor="middle" font-size="11" font-weight="700" fill="#be123c">SetFlag&lt;MTE2_MTE3&gt;</text>
+          <rect x="308" y="196" width="144" height="28" rx="14" fill="#fde8e8" stroke="#e11d48" id="mteFlag2" opacity=".25"/>
+          <text x="380" y="214" text-anchor="middle" font-size="11" font-weight="700" fill="#be123c">WaitFlag&lt;MTE2_MTE3&gt;</text>
+
+          <!-- 远端 GM / 本地 GM -->
+          <rect x="560" y="56" width="210" height="112" rx="12" class="s-panel"/>
+          <rect x="560" y="56" width="210" height="30" rx="12" fill="#64748b"/><rect x="560" y="74" width="210" height="12" fill="#64748b"/>
+          <text x="665" y="76" text-anchor="middle" font-size="12" font-weight="800" fill="#fff">对端 PE 的 GM（HBM）</text>
+          <text x="665" y="112" text-anchor="middle" class="s-tc">aclshmem_ptr(src, pe) 换算出的远端地址</text>
+          <text x="665" y="130" text-anchor="middle" class="s-tc">经 HCCS / SIO 直达（load/store 语义）</text>
+          <text x="665" y="148" text-anchor="middle" class="s-tc mono-t">remote_ptr = p2p_device_heap_base[pe]+off</text>
+          <rect x="560" y="230" width="210" height="112" rx="12" class="s-panel"/>
+          <rect x="560" y="230" width="210" height="30" rx="12" fill="#334155"/><rect x="560" y="248" width="210" height="12" fill="#334155"/>
+          <text x="665" y="250" text-anchor="middle" font-size="12" font-weight="800" fill="#fff">本地 GM（目的）</text>
+          <text x="665" y="286" text-anchor="middle" class="s-tc">get：数据最终落点</text>
+          <text x="665" y="304" text-anchor="middle" class="s-tc">put：数据出发地（方向相反）</text>
+
+          <!-- 数据流 ① -->
+          <path id="mteP1" d="M556 96 C 470 60, 380 62, 300 88" class="s-edge" stroke="#d97706" stroke-width="2" marker-end="url(#ah-m)" fill="none"/>
+          <text x="430" y="52" text-anchor="middle" class="s-tc" fill="#b45309">① copy_gm2ub：远端 GM → UB</text>
+          <!-- 数据流 ③ -->
+          <path id="mteP2" d="M300 262 C 390 300, 480 300, 556 286" class="s-edge" stroke="#d97706" stroke-width="2" marker-end="url(#ah-m)" fill="none"/>
+          <text x="428" y="330" text-anchor="middle" class="s-tc" fill="#b45309">③ copy_ub2gm：UB → 本地 GM</text>
+          <!-- 循环 ④ -->
+          <path d="M212 200 C 260 380, 480 400, 556 360" class="s-edge s-dash" stroke="#e11d48" marker-end="url(#ah-r)" fill="none"/>
+          <text x="400" y="408" text-anchor="middle" class="s-tc" fill="#be123c">④ 尾块处理 &amp; 循环：SetFlag/WaitFlag&lt;MTE3_MTE2&gt;（最后一次免等待）</text>
+
+          <!-- 动画数据块 -->
+          <circle id="mtePkt" r="9" fill="#f59e0b" stroke="#92400e" stroke-width="1.5" opacity="0"/>
+          <circle id="mtePkt2" r="9" fill="#f59e0b" stroke="#92400e" stroke-width="1.5" opacity="0"/>
+
+          <!-- 底部说明 -->
+          <rect x="800" y="56" width="148" height="286" rx="12" class="s-soft"/>
+          <text x="816" y="80" class="s-t" font-size="12.5">适用与限制</text>
+          <text x="816" y="104" class="s-tc">· 同机卡间（HCCS）最优</text>
+          <text x="816" y="122" class="s-tc">· 占用 AICore 执行流</text>
+          <text x="816" y="140" class="s-tc">· 大小 = ub_size 分块循环</text>
+          <text x="816" y="158" class="s-tc">· AMO 可走 MTE 原子位</text>
+          <text x="816" y="184" class="s-tc" fill="#b45309">910：UB+SetAtomicAdd</text>
+          <text x="816" y="202" class="s-tc" fill="#b45309">　　+copy_ub2gm 模拟</text>
+          <text x="816" y="220" class="s-tc" fill="#b45309">950：AtomicAdd/Cas/Exch</text>
+          <text x="816" y="238" class="s-tc" fill="#b45309">　　原生硬件原子</text>
+          <text x="816" y="264" class="s-tc">· 非连续：copy_params</text>
+          <text x="816" y="282" class="s-tc">　(repeat/length/src_ld/dst_ld)</text>
+          <text x="816" y="308" class="s-tc">· enable_L2 变体走缓存</text>
+        </svg>
+        </div>
+        <div class="foot">
+          <div class="ctrl" style="margin:6px 0 2px">
+            <button class="btn sm" id="mtePlay">▶ 播放流水</button>
+            <span class="chip mte">get：远端→UB→本地</span><span class="chip mte">put：本地→UB→远端（方向镜像）</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="codeblock"><div class="hd"><span class="file">src/device/gm2gm/engine/shmem_device_mte.hpp · aclshmemx_mte_get_nbi（节选）</span></div>
+<pre>auto remote_ptr = aclshmem_ptr(src, pe);              <span class="cm">// ① 对称地址换算</span>
+uint64_t block_size = ub_size / sizeof(T) * sizeof(T); <span class="cm">// ② 按 UB 容量分块</span>
+for (uint64_t i = 0; i &lt; loop_times; i++) {
+    aclshmemi_copy_gm2ub(buf, remote_ptr + i * repeat_elem, block_size);  <span class="cm">// ③ 远端GM → UB</span>
+    AscendC::SetFlag&lt;AscendC::HardEvent::MTE2_MTE3&gt;(sync_id);              <span class="cm">// ④ 通知 MTE3</span>
+    AscendC::WaitFlag&lt;AscendC::HardEvent::MTE2_MTE3&gt;(sync_id);            <span class="cm">// ⑤ 等 UB 就绪</span>
+    aclshmemi_copy_ub2gm(dst + i * repeat_elem, buf, block_size);         <span class="cm">// ⑥ UB → 本地GM</span>
+    <span class="kw">if</span> (i != loop_times - 1) { AscendC::SetFlag&lt;AscendC::HardEvent::MTE3_MTE2&gt;(sync_id); } <span class="cm">// 尾块免等待</span>
+}</pre></div>
+
+      <details class="deep"><summary>🔬 深入：为什么"尾块免等待"？AMO 的两条路线？</summary><div class="body">
+        <ul>
+          <li><b>尾块免等待</b>：循环里每轮要先把 UB 归还给 MTE2 复用（SetFlag MTE3_MTE2）；但最后一块不再有下一轮搬运，这个 flag 留到 kernel 结束统一回收即可——省一次事件等待。</li>
+          <li><b>AMO 两条路线</b>（<code class="inline">__NPU_ARCH__==3510</code> 即 950 区分）：950 直接 <code class="inline">AscendC::AtomicAdd/Cas/Exch</code> 硬件原子；910 先把 add 值写进 UB，<code class="inline">SetAtomicAdd&lt;T&gt;()</code> 设置 MTE 写命令的原子标志，再 <code class="inline">copy_ub2gm</code>——原子性由 MTE 写通路保证。</li>
+          <li><b>Host 内存</b>：MTE 同样覆盖 D2H/H2D（本机）与 D2rH/rH2D（远端 Host，借助 Host 连接映射区 48T）。</li>
+        </ul>
+        <span class="src">include/device/ub2gm/engine/shmem_device_mte.h</span><span class="src">src/device/ub2gm/mte/shmem_device_mte.hpp</span>
+      </div></details>
+    </div>
+
+    <!-- ================= SDMA ================= -->
+    <div class="tabpanel" data-panel="sdma">
+      <h3 id="s-sdma" style="margin-top:4px">SDMA：System DMA（STARS 引擎，队列化搬运）</h3>
+      <p><b>硬件本体</b>：独立于 AICore 的系统级 DMA 引擎（STARS），有自己的<b>通道队列</b>。AICore 只负责"填工单 + 按门铃"，搬运由引擎异步完成——<b>AICore 被解放出来继续算</b>。</p>
+      <p><b>平台</b>：仅 <code class="inline">__NPU_ARCH__==2201</code>（910A3 档）。950 上由 UDMA 取代。</p>
+
+      <div class="fig">
+        <div class="cap">🖼️ <b>图 6-2 · SDMA 数据面：SQE 工单 → 通道队列 → doorbell → 引擎执行</b></div>
+        <div class="body">
+        <svg viewBox="0 0 960 420" role="img" aria-label="SDMA 通路图">
+          <!-- AICore -->
+          <rect x="16" y="40" width="170" height="150" rx="12" class="s-soft"/>
+          <text x="32" y="64" class="s-t">AICore（AIV）</text>
+          <rect x="32" y="78" width="138" height="44" rx="9" class="s-node"/>
+          <text x="101" y="97" text-anchor="middle" class="s-tc">构造 SDMA SQE</text>
+          <text x="101" y="113" text-anchor="middle" class="s-tc mono-t" font-size="10">aclshmemi_fill_sdma_sqe()</text>
+          <text x="101" y="150" text-anchor="middle" class="s-tc">只填描述符，不等数据</text>
+          <text x="101" y="168" text-anchor="middle" class="s-tc">（异步、可流水）</text>
+
+          <!-- SQ ring -->
+          <rect x="240" y="24" width="330" height="190" rx="12" class="s-panel"/>
+          <text x="256" y="46" class="s-t">SQ 提交队列（HBM · 环形）</text>
+          <text x="256" y="64" class="s-tc">stars_channel_info_t{sq_base, sq_depth, stream_id}</text>
+          <g>
+            <rect x="256" y="78" width="70" height="34" rx="6" fill="#dcfce7" stroke="#16a34a"/><text x="291" y="99" text-anchor="middle" class="s-tc mono-t" font-size="10">SQE</text>
+            <rect x="332" y="78" width="70" height="34" rx="6" fill="#dcfce7" stroke="#16a34a"/><text x="367" y="99" text-anchor="middle" class="s-tc mono-t" font-size="10">SQE</text>
+            <rect x="408" y="78" width="70" height="34" rx="6" fill="#dcfce7" stroke="#16a34a"/><text x="443" y="99" text-anchor="middle" class="s-tc mono-t" font-size="10">SQE</text>
+            <rect x="484" y="78" width="70" height="34" rx="6" fill="#e2e8f0" stroke="#94a3b8"/><text x="519" y="99" text-anchor="middle" class="s-tc mono-t" font-size="10">…</text>
+            <rect x="256" y="120" width="70" height="34" rx="6" fill="#e2e8f0" stroke="#94a3b8"/><text x="291" y="141" text-anchor="middle" class="s-tc mono-t" font-size="10">…</text>
+            <rect x="332" y="120" width="70" height="34" rx="6" fill="#fef3e2" stroke="#d97706"/><text x="367" y="141" text-anchor="middle" class="s-tc mono-t" font-size="10">tail→</text>
+            <rect x="408" y="120" width="70" height="34" rx="6" fill="#fef3e2" stroke="#d97706"/><text x="443" y="141" text-anchor="middle" class="s-tc mono-t" font-size="10">←head</text>
+            <rect x="484" y="120" width="70" height="34" rx="6" fill="#e2e8f0" stroke="#94a3b8"/><text x="519" y="141" text-anchor="middle" class="s-tc mono-t" font-size="10">…</text>
+          </g>
+          <text x="256" y="180" class="s-tc mono-t" font-size="10.5">SQE 头部: type=11(SDMA) · rt_streamid · task_id · kernel_credit=240</text>
+          <text x="256" y="198" class="s-tc mono-t" font-size="10.5">载荷: src_addr_lo/hi · dst_addr_lo/hi · length · qos=6(HCCL)</text>
+
+          <!-- doorbell -->
+          <rect x="612" y="64" width="130" height="56" rx="10" fill="#fde8e8" stroke="#e11d48" stroke-width="1.5"/>
+          <text x="677" y="88" text-anchor="middle" class="s-t" fill="#be123c">doorbell</text>
+          <text x="677" y="106" text-anchor="middle" class="s-tc">敲铃通知引擎</text>
+
+          <!-- STARS engine -->
+          <rect x="612" y="150" width="330" height="110" rx="12" fill="#e7f6f0" stroke="#059669" stroke-width="1.6"/>
+          <text x="777" y="176" text-anchor="middle" class="s-t" fill="#047857">SDMA（STARS）引擎</text>
+          <text x="777" y="196" text-anchor="middle" class="s-tc">从 SQ 取工单 → 独立 DMA 搬运</text>
+          <text x="777" y="214" text-anchor="middle" class="s-tc">不占用 AICore · 支持多通道并发</text>
+          <text x="777" y="234" text-anchor="middle" class="s-tc">notify/wait：SQE type=6（notify_record）</text>
+
+          <!-- 数据目的地 -->
+          <g>
+            <rect x="240" y="300" width="200" height="70" rx="10" class="s-node"/>
+            <text x="340" y="328" text-anchor="middle" class="s-t" font-size="12.3">本地/对端 GM</text>
+            <text x="340" y="348" text-anchor="middle" class="s-tc">D2D · 经 HCCS 跨卡</text>
+            <rect x="470" y="300" width="200" height="70" rx="10" class="s-node"/>
+            <text x="570" y="328" text-anchor="middle" class="s-t" font-size="12.3">Host DRAM</text>
+            <text x="570" y="348" text-anchor="middle" class="s-tc">D2H / H2D</text>
+            <rect x="700" y="300" width="242" height="70" rx="10" fill="#e7f6f0" stroke="#059669"/>
+            <text x="821" y="326" text-anchor="middle" class="s-t" font-size="12.3" fill="#047857">CMO：L2 预取</text>
+            <text x="821" y="346" text-anchor="middle" class="s-tc">aclshmemx_cmo_nbi（prefetch）</text>
+          </g>
+
+          <!-- 流程箭头 -->
+          <path d="M186 96 H 240" class="s-edge" stroke="#059669" stroke-width="2" marker-end="url(#ah-g)"/>
+          <text x="213" y="88" text-anchor="middle" class="s-tc" fill="#047857">① 写 SQE</text>
+          <path d="M570 96 C 590 96, 596 90, 612 90" class="s-edge" stroke="#e11d48" stroke-width="2" marker-end="url(#ah-r)"/>
+          <text x="592" y="52" text-anchor="middle" class="s-tc" fill="#be123c">② 更新 tail + 敲铃</text>
+          <path d="M677 120 C 700 140, 720 146, 740 150" class="s-edge" stroke="#059669" stroke-width="2" marker-end="url(#ah-g)"/>
+          <path d="M700 260 C 640 280, 580 288, 570 300" class="s-edge" stroke="#059669" stroke-width="2" marker-end="url(#ah-g)"/>
+          <path d="M760 260 C 700 282, 420 286, 344 300" class="s-edge" stroke="#059669" stroke-width="2" marker-end="url(#ah-g)"/>
+          <path d="M850 260 C 860 274, 858 286, 850 300" class="s-edge" stroke="#059669" stroke-width="2" marker-end="url(#ah-g)"/>
+
+          <!-- quiet -->
+          <rect x="16" y="210" width="170" height="160" rx="12" class="s-soft"/>
+          <text x="32" y="234" class="s-t" font-size="12.5">完成与同步</text>
+          <text x="32" y="258" class="s-tc">· aclshmemx_sdma_quiet</text>
+          <text x="32" y="276" class="s-tc">　等本核队列排空</text>
+          <text x="32" y="300" class="s-tc">· notify_record + wait</text>
+          <text x="32" y="318" class="s-tc">　生产者记录/消费者等待</text>
+          <text x="32" y="342" class="s-tc">· STARS v2 CMO SQE</text>
+          <text x="32" y="360" class="s-tc">　（fill_stars_v2_sdma_sqe）</text>
+        </svg>
+        </div>
+        <div class="foot">SDMA 的 quiet 是"本核队列"粒度：一次 quiet 即覆盖发给所有 SDMA 可达 PE 的请求（对比 RDMA/UDMA 需要按对端 quiet）。</div>
+      </div>
+
+      <div class="codeblock"><div class="hd"><span class="file">src/device/gm2gm/engine/shmem_device_sdma.hpp · aclshmemi_fill_sdma_sqe（节选）</span></div>
+<pre>sqe-&gt;header.type = ACLSHMEM_SQE_TYPE_SDMA;   <span class="cm">// 11</span>
+sqe-&gt;header.rt_streamid = channel_info-&gt;stream_id;
+sqe-&gt;kernel_credit = ACLSHMEM_STARS_DEFAULT_KERNEL_CREDIT;  <span class="cm">// 240</span>
+sqe-&gt;src_addr_low  = (uint32_t)(src_addr &amp; 0xFFFFFFFF);      <span class="cm">// 源地址（已换算）</span>
+sqe-&gt;src_addr_high = (uint32_t)(src_addr &gt;&gt; 32);
+sqe-&gt;dst_addr_low  = ...; sqe-&gt;dst_addr_high = ...;
+sqe-&gt;length = length;  sqe-&gt;qos = 6;  <span class="cm">// 6 = HCCL QoS</span></pre></div>
+
+      <details class="deep"><summary>🔬 深入：通道从哪来？与 MTE 的取舍？</summary><div class="body">
+        <ul>
+          <li><b>通道分配</b>：init 时 SDMA transport manager 建好通道（AICPU/AIV 共享 sdma_workspace），通道信息（sq_base/深度/stream_id）写入 device 可见的元数据；算子里 <code class="inline">aclshmemi_get_channel_info</code> 直接取。</li>
+          <li><b>取舍</b>：MTE 延迟最低但占核；SDMA 把搬运卸载出去，适合<b>大块、可与计算重叠</b>的搬运。二者可混用：小控制消息走 MTE，大流量走 SDMA。</li>
+          <li><b>notify/wait</b>：SDMA 提供配套同步原语——生产者发 notify_record（type=6 SQE），消费者 wait 该记录，实现"搬运完成通知"（examples/notifywait）。</li>
+        </ul>
+        <span class="src">src/host/transport/device_sdma/</span><span class="src">examples/sdma · examples/notifywait</span>
+      </div></details>
+    </div>
+
+    <!-- ================= RDMA ================= -->
+    <div class="tabpanel" data-panel="rdma">
+      <h3 id="s-rdma" style="margin-top:4px">RDMA / RoCE：跨节点远程直接内存访问</h3>
+      <p><b>硬件本体</b>：RoCE 网卡（本仓支持三种后端：<span class="chip rdma">IN_DIE 片内</span><span class="chip rdma">XSCALE（云脉）</span><span class="chip rdma">HNS 1825</span>）。网卡绕过两端 CPU 直接读写对端注册内存（MR），跨机主力通路。</p>
+      <p><b>编程模型（verbs 风格）</b>：每对 (pe, qp_idx) 一个 <b>QP（Queue Pair）</b>——发送队列 SQ + 完成队列 CQ。AICore 构造 <b>WQE</b>（工作队列元素）→ 写入 SQ → <b>敲 doorbell</b> → 网卡取 WQE 执行 → 完成后写 <b>CQE</b> 到 CQ → 轮询 CQ 确认完成。内存需先注册成 <b>MR</b> 拿到 <b>lkey/rkey</b>（本地/远程访问键）。</p>
+
+      <div class="fig">
+        <div class="cap">🖼️ <b>图 6-3 · RDMA 数据面：WQE → SQ → doorbell → 网卡 → 对端 HBM，CQE 回执</b></div>
+        <div class="body">
+        <svg viewBox="0 0 960 480" role="img" aria-label="RDMA 通路图">
+          <!-- 顶部流水线 -->
+          <g>
+            <rect x="16" y="30" width="150" height="96" rx="12" class="s-soft"/>
+            <text x="91" y="54" text-anchor="middle" class="s-t" font-size="12.5">AIV（计算核）</text>
+            <text x="91" y="76" text-anchor="middle" class="s-tc">在 UB 里构造 WQE</text>
+            <text x="91" y="94" text-anchor="middle" class="s-tc mono-t" font-size="10">aclshmemi_rdma_send_wr</text>
+            <text x="91" y="112" text-anchor="middle" class="s-tc">+ SGE（本地地址/lkey）</text>
+
+            <rect x="210" y="30" width="190" height="96" rx="12" class="s-panel"/>
+            <text x="305" y="54" text-anchor="middle" class="s-t" font-size="12.5">SQ 发送队列（HBM）</text>
+            <rect x="228" y="66" width="60" height="24" rx="5" fill="#f3eefe" stroke="#7c3aed"/><text x="258" y="82" text-anchor="middle" class="s-tc mono-t" font-size="10">WQE</text>
+            <rect x="294" y="66" width="60" height="24" rx="5" fill="#f3eefe" stroke="#7c3aed"/><text x="324" y="82" text-anchor="middle" class="s-tc mono-t" font-size="10">WQE</text>
+            <rect x="360" y="66" width="24" height="24" rx="5" fill="#e2e8f0" stroke="#94a3b8"/>
+            <text x="305" y="112" text-anchor="middle" class="s-tc mono-t" font-size="10">sq_ctx[pe*qp_num+qp_idx]</text>
+
+            <rect x="444" y="44" width="120" height="66" rx="10" fill="#fde8e8" stroke="#e11d48" stroke-width="1.5"/>
+            <text x="504" y="70" text-anchor="middle" class="s-t" fill="#be123c" font-size="12.5">doorbell</text>
+            <text x="504" y="90" text-anchor="middle" class="s-tc mono-t" font-size="10">写网卡 MMIO 寄存器</text>
+
+            <rect x="608" y="30" width="170" height="96" rx="12" fill="#f3eefe" stroke="#7c3aed" stroke-width="1.6"/>
+            <text x="693" y="54" text-anchor="middle" class="s-t" fill="#6d28d9">RoCE 网卡</text>
+            <text x="693" y="76" text-anchor="middle" class="s-tc">取 WQE · 拆包 · 直写对端</text>
+            <text x="693" y="94" text-anchor="middle" class="s-tc">RDMA WRITE / READ</text>
+            <text x="693" y="112" text-anchor="middle" class="s-tc">原生原子：FA / CAS</text>
+
+            <!-- 网络 -->
+            <path d="M778 78 C 806 78, 812 78, 828 78" class="s-edge s-animflow" stroke="#7c3aed" stroke-width="2.4" marker-end="url(#ah-v)"/>
+            <text x="842" y="62" class="s-tc" fill="#6d28d9">RoCEv2 网络</text>
+            <text x="842" y="78" class="s-tc mono-t" font-size="10">IB header · 按 QoS</text>
+
+            <rect x="828" y="88" width="120" height="80" rx="12" class="s-panel"/>
+            <text x="888" y="112" text-anchor="middle" class="s-t" font-size="12.3">对端 HBM</text>
+            <text x="888" y="130" text-anchor="middle" class="s-tc">对端无需 CPU 参与</text>
+            <text x="888" y="148" text-anchor="middle" class="s-tc mono-t" font-size="10">rkey 鉴权</text>
+          </g>
+
+          <!-- 回执链 -->
+          <path d="M693 126 V 176" class="s-edge" stroke="#16a34a" marker-end="url(#ah-g)"/>
+          <rect x="608" y="180" width="170" height="60" rx="10" class="s-panel"/>
+          <text x="693" y="204" text-anchor="middle" class="s-t" font-size="12.3">CQ 完成队列</text>
+          <text x="693" y="224" text-anchor="middle" class="s-tc">CQE（含 status/byte_cnt）</text>
+          <path d="M608 210 C 500 210, 420 210, 400 210" class="s-edge" stroke="#16a34a" marker-end="url(#ah-g)"/>
+          <rect x="210" y="180" width="190" height="60" rx="10" fill="#e7f6f0" stroke="#059669"/>
+          <text x="305" y="204" text-anchor="middle" class="s-t" font-size="12.3" fill="#047857">poll CQ / roce_quiet</text>
+          <text x="305" y="224" text-anchor="middle" class="s-tc">确认"数据已落到对端"</text>
+
+          <!-- 流程编号 -->
+          <path d="M166 78 H 210" class="s-edge" stroke="#7c3aed" stroke-width="2" marker-end="url(#ah-v)"/>
+          <text x="188" y="70" text-anchor="middle" class="s-tc" fill="#6d28d9">①</text>
+          <path d="M400 78 C 418 78, 424 76, 444 74" class="s-edge" stroke="#e11d48" stroke-width="2" marker-end="url(#ah-r)"/>
+          <text x="422" y="62" text-anchor="middle" class="s-tc" fill="#be123c">②</text>
+          <text x="188" y="128" text-anchor="middle" class="s-tc" fill="#6d28d9">MTE3 把 WQE 从 UB 搬到 SQ</text>
+
+          <!-- WQE 布局卡 -->
+          <g transform="translate(16,262)">
+            <rect width="470" height="200" rx="12" class="s-panel"/>
+            <text x="16" y="24" class="s-t">WQE 位域布局（IN_DIE 后端 · aclshmemi_wqe_ctx）</text>
+            <g class="mono-t" font-size="10.5">
+              <rect x="16" y="36" width="438" height="22" rx="4" fill="#f3eefe"/><text x="24" y="51">[0:4] opcode(WRITE=3/READ) [7] owner_bit [8] IBV_SEND_SIGNALED</text>
+              <rect x="16" y="62" width="438" height="22" rx="4" fill="#eef4ff"/><text x="24" y="77">[31:0] message_len（字节数）</text>
+              <rect x="16" y="88" width="438" height="22" rx="4" fill="#eef4ff"/><text x="24" y="103">immt_data = 0 · [120:127] num_sge=1 · start_sge_index=0</text>
+              <rect x="16" y="114" width="438" height="22" rx="4" fill="#fef3e2"/><text x="24" y="129">rkey（对端 MR 的远程访问键 —— 来自 exchange 阶段交换）</text>
+              <rect x="16" y="140" width="438" height="22" rx="4" fill="#fef3e2"/><text x="24" y="155">remote VA（对端对称地址 —— aclshmem_ptr 换算）</text>
+              <rect x="16" y="166" width="438" height="22" rx="4" fill="#dcfce7"/><text x="24" y="181">SGE: {len, lkey(本地MR键), local VA}</text>
+            </g>
+          </g>
+
+          <!-- doorbell 布局卡 -->
+          <g transform="translate(510,262)">
+            <rect width="434" height="200" rx="12" class="s-panel"/>
+            <text x="16" y="24" class="s-t">doorbell 64bit 布局 + QP 上下文</text>
+            <g class="mono-t" font-size="10.5">
+              <rect x="16" y="36" width="402" height="22" rx="4" fill="#fde8e8"/><text x="24" y="51">[0:23] DB_TAG=qp_num · [24:27] DB_CMD=0(SQ)</text>
+              <rect x="16" y="62" width="402" height="22" rx="4" fill="#fde8e8"/><text x="24" y="77">[32:47] DB_PI=sq.head%65536 · [48:50] DB_SL=sl</text>
+              <rect x="16" y="88" width="402" height="22" rx="4" fill="#e2e8f0"/><text x="24" y="103">QP ctx: {wqn, sq_base, depth, db_addr, amo_addr/lkey}</text>
+              <rect x="16" y="114" width="402" height="22" rx="4" fill="#e2e8f0"/><text x="24" y="129">mem_info[pe]: {rkey, addr, len}（每对端一张）</text>
+              <rect x="16" y="140" width="402" height="40" rx="4" fill="#f3eefe"/><text x="24" y="155">XSCALE 聚合批：defer + submit，一批 ≤1023 个操作</text><text x="24" y="171">UB 工作区 ≥ 64 + 128×n 字节 · 每 (pe,qp) 一个活跃批</text>
+            </g>
+          </g>
+        </svg>
+        </div>
+        <div class="foot">典型时序：<b>①UB 构造 WQE → ②MTE3 搬到 SQ → ③写 doorbell → ④网卡发包直写对端 → ⑤CQE 回执 → ⑥poll/quiet</b>。注意 owner_bit 翻转（WQE 环所有权交接）与 signaled 位（要求生成 CQE）。</div>
+      </div>
+
+      <div class="codeblock"><div class="hd"><span class="file">src/device/gm2gm/engine/rdma_backends/rdma_device_backend_in_die.hpp（节选）</span></div>
+<pre>uint64_t owner_bit = (cur_head &gt;&gt; 13) &amp; 0x1;            <span class="cm">// WQE 环每 8192 项翻转所有权</span>
+byte4  = opcode &amp; 0x1F;                                <span class="cm">// RDMA_WRITE=3 / RDMA_READ</span>
+byte4 |= ((~owner_bit) &lt;&lt; 7) &amp; (1 &lt;&lt; 7);              <span class="cm">// owner 位</span>
+byte4 |= 1 &lt;&lt; 8;                                      <span class="cm">// IBV_SEND_SIGNALED：完成时生成 CQE</span>
+*(u32*)(wqe + 20) = wr.rkey;                           <span class="cm">// 对端远程键</span>
+*(u64*)(wqe + 24) = (u64)wr.remote_addr;               <span class="cm">// 对端虚拟地址</span>
+<span class="cm">// —— doorbell：DB_TAG=qp_num | DB_CMD=0 | DB_PI=head | DB_SL ——</span>
+doorbell_info |= sq_context-&gt;wqn;
+doorbell_info |= ((u64)cur_head % 65536) &lt;&lt; 32;
+<span class="cm">// 经 MTE3 把 doorbell 值从 UB 写入网卡寄存器地址（db_addr）</span></pre></div>
+
+      <details class="deep"><summary>🔬 深入：三个后端的差异、原子操作与并发约束</summary><div class="body">
+        <ul>
+          <li><b>编译期多态</b>：后端以模板参数 <code class="inline">aclshmemi_rdma_backend_t B</code> 静态分发（<code class="inline">aclshmemi_roce_fill_wqe&lt;B, OP&gt;</code> / <code class="inline">ring_sq_doorbell&lt;B&gt;</code>），零运行时开销；WQE/doorbell 位域由各后端特化实现。</li>
+          <li><b>原子</b>：<code class="inline">atomic_fetch_and_add</code> / <code class="inline">compare_and_swap</code> 走网卡原生原子操作，结果数据落在 QP 上下文的 <code class="inline">amo_addr</code>（配 amo_lkey），读回即得旧值。</li>
+          <li><b>并发约束</b>：默认路径"同一 PE 的并发 RMA/AMO 不支持"——因为共享一个 SQ 环（单生产者）。解法：低阶接口按核分配 <code class="inline">qp_idx</code>（每执行单元独享 QP + UB 工作区 + sync_id），或用 XSCALE 聚合批（defer/submit）。</li>
+          <li><b>建链</b>：Host 侧 RdmaTransportManager 负责 OpenDevice（Ra 初始化/设备 IP）、MR 注册（lkey/rkey）、Prepare/Connect（交换 TransportMemoryKey）、把 QP 信息表地址写入 device 元数据（qpInfoAddress）。</li>
+        </ul>
+        <span class="src">src/device/gm2gm/engine/shmem_device_rdma.hpp</span><span class="src">src/host/transport/device_rdma/</span><span class="src">examples/rdma_demo · rdma_aclgraph_demo</span>
+      </div></details>
+    </div>
+
+    <!-- ================= UDMA ================= -->
+    <div class="tabpanel" data-panel="udma">
+      <h3 id="s-udma" style="margin-top:4px">UDMA：统一 DMA（UB 灵衢总线，950 代际）</h3>
+      <p><b>硬件本体</b>：950 的 <b>UB（Unified Bus，灵衢）</b>统一互联——华为新一代数据中心统一总线协议，统一 scale-up/scale-out，提供 <b>UBMEM</b>（内存语义）与 <b>URMA</b>（统一远程内存访问）能力。寻址不再用 IP/rkey，而用 <b>EID</b>（16 字节端点地址）+ <b>jetty（码头）</b> + <b>token（令牌）</b>。</p>
+
+      <div class="fig">
+        <div class="cap">🖼️ <b>图 6-4 · UDMA 数据面：SQE + EID/token 直达，与 relay 中继路径</b></div>
+        <div class="body">
+        <svg viewBox="0 0 960 450" role="img" aria-label="UDMA 通路图">
+          <!-- SQE 卡 -->
+          <g transform="translate(16,24)">
+            <rect width="270" height="240" rx="12" class="s-panel"/>
+            <text x="16" y="24" class="s-t">UDMA SQE（aclshmemi_sqe_ctx_t 摘要）</text>
+            <g class="mono-t" font-size="10.3">
+              <rect x="16" y="36" width="238" height="22" rx="4" fill="#e6f6fb"/><text x="24" y="51">opcode: WRITE/READ/SEND/CAS/SWAP…</text>
+              <rect x="16" y="62" width="238" height="22" rx="4" fill="#e6f6fb"/><text x="24" y="77">rmt_eid_l / rmt_eid_h（对端 EID）</text>
+              <rect x="16" y="88" width="238" height="22" rx="4" fill="#e6f6fb"/><text x="24" y="103">rmt_jetty_or_seg_id（tid）</text>
+              <rect x="16" y="114" width="238" height="22" rx="4" fill="#e6f6fb"/><text x="24" y="129">rmt_token_value（对端令牌）</text>
+              <rect x="16" y="140" width="238" height="22" rx="4" fill="#e6f6fb"/><text x="24" y="155">rmt_addr_l/h（对端地址）</text>
+              <rect x="16" y="166" width="238" height="22" rx="4" fill="#fef3e2"/><text x="24" y="181">flag: odr | fence | se | cqe（组合）</text>
+              <rect x="16" y="192" width="238" height="22" rx="4" fill="#dcfce7"/><text x="24" y="207">udf: reduce dtype/op（WRITE_WITH_REDUCE）</text>
+            </g>
+          </g>
+
+          <!-- 总线 -->
+          <rect x="340" y="24" width="130" height="400" rx="14" fill="#e6f6fb" stroke="#0891b2" stroke-width="1.8"/>
+          <text x="405" y="52" text-anchor="middle" class="s-t" fill="#0e7490">UB 总线</text>
+          <text x="405" y="72" text-anchor="middle" class="s-t" fill="#0e7490">（灵衢）</text>
+          <text x="405" y="100" text-anchor="middle" class="s-tc">EID 全网统一编址</text>
+          <text x="405" y="120" text-anchor="middle" class="s-tc">URMA 远程内存语义</text>
+          <text x="405" y="140" text-anchor="middle" class="s-tc">UBMEM 内存语义</text>
+          <text x="405" y="168" text-anchor="middle" class="s-tc mono-t" font-size="10">层级0 MESH</text>
+          <text x="405" y="186" text-anchor="middle" class="s-tc mono-t" font-size="10">层级1 CLOS</text>
+          <text x="405" y="204" text-anchor="middle" class="s-tc mono-t" font-size="10">层级2 UBOE</text>
+          <text x="405" y="236" text-anchor="middle" class="s-tc">doorbell：</text>
+          <text x="405" y="254" text-anchor="middle" class="s-tc mono-t" font-size="10">HW_DB / SW_DB</text>
+          <text x="405" y="284" text-anchor="middle" class="s-tc">WQ/CQ 环形队列</text>
+          <text x="405" y="302" text-anchor="middle" class="s-tc mono-t" font-size="10">slot = pe（直连）</text>
+          <text x="405" y="320" text-anchor="middle" class="s-tc mono-t" font-size="10">slot = pe*rank+relay（中继）</text>
+          <text x="405" y="352" text-anchor="middle" class="s-tc">QP 表：sq/rq/scq/rcq/mem</text>
+          <text x="405" y="370" text-anchor="middle" class="s-tc">按 slot × qp_num 二维索引</text>
+
+          <!-- 直连对端 -->
+          <g transform="translate(530,24)">
+            <rect width="200" height="150" rx="12" class="s-panel"/>
+            <rect width="200" height="30" rx="12" fill="#0891b2"/><rect y="18" width="200" height="12" fill="#0891b2"/>
+            <text x="100" y="21" text-anchor="middle" font-size="12" font-weight="800" fill="#fff">对端 NPU（直连）</text>
+            <rect x="16" y="42" width="80" height="40" rx="8" fill="#e6f6fb" stroke="#0891b2"/>
+            <text x="56" y="60" text-anchor="middle" class="s-tc" font-weight="700">jetty</text>
+            <text x="56" y="75" text-anchor="middle" class="s-tc mono-t" font-size="9">tid</text>
+            <rect x="104" y="42" width="80" height="40" rx="8" class="s-node"/>
+            <text x="144" y="60" text-anchor="middle" class="s-tc" font-weight="700">内存</text>
+            <text x="144" y="75" text-anchor="middle" class="s-tc mono-t" font-size="9">token 校验</text>
+            <text x="100" y="106" text-anchor="middle" class="s-tc">ubmem_info: {tpn, tid,</text>
+            <text x="100" y="124" text-anchor="middle" class="s-tc">rmt_token_value, addr, eid_addr}</text>
+          </g>
+
+          <!-- relay -->
+          <g transform="translate(530,210)">
+            <rect width="414" height="120" rx="12" class="s-soft"/>
+            <text x="16" y="24" class="s-t" font-size="12.5">relay 中继路径（ACLSHMEM_RELAY_SUPPORT）</text>
+            <rect x="16" y="40" width="100" height="40" rx="9" class="s-node"/><text x="66" y="64" text-anchor="middle" class="s-tc">本 PE</text>
+            <rect x="156" y="40" width="100" height="40" rx="9" class="s-node"/><text x="206" y="58" text-anchor="middle" class="s-tc">中继 PE</text><text x="206" y="72" text-anchor="middle" class="s-tc mono-t" font-size="9">relay_pe</text>
+            <rect x="296" y="40" width="100" height="40" rx="9" class="s-node"/><text x="346" y="64" text-anchor="middle" class="s-tc">目标 PE</text>
+            <path d="M116 60 H 156" class="s-edge" stroke="#0891b2" stroke-width="2" marker-end="url(#ah-c)"/>
+            <path d="M256 60 H 296" class="s-edge" stroke="#0891b2" stroke-width="2" marker-end="url(#ah-c)"/>
+            <text x="206" y="104" text-anchor="middle" class="s-tc">CLOS 组网下非直连 PE：借中继 PE 的端口 EID 转发 · slot = pe*rank_count + relay_pe</text>
+          </g>
+
+          <!-- 特色 opcode -->
+          <g transform="translate(530,346)">
+            <rect width="414" height="78" rx="12" class="s-panel"/>
+            <text x="16" y="22" class="s-t" font-size="12.5">"通算融合"硬件特色 opcode</text>
+            <text x="16" y="44" class="s-tc">WRITE_WITH_NOTIFY：搬运 + 置信号一跳完成（put-with-signal）</text>
+            <text x="16" y="62" class="s-tc">WRITE_WITH_REDUCE：硬件归约写（sum/min/max…），AllReduce 融合的基石</text>
+          </g>
+
+          <!-- 连线 -->
+          <path d="M286 110 C 312 110, 322 110, 340 110" class="s-edge" stroke="#0891b2" stroke-width="2.4" marker-end="url(#ah-c)"/>
+          <text x="312" y="100" text-anchor="middle" class="s-tc" fill="#0e7490">SQE</text>
+          <path d="M470 96 C 496 96, 506 96, 530 98" class="s-edge" stroke="#0891b2" stroke-width="2.4" marker-end="url(#ah-c)"/>
+          <text x="500" y="86" text-anchor="middle" class="s-tc" fill="#0e7490">直达</text>
+
+          <!-- 底部 -->
+          <g transform="translate(16,286)">
+            <rect width="270" height="138" rx="12" class="s-soft"/>
+            <text x="16" y="24" class="s-t" font-size="12.5">完成与同步</text>
+            <text x="16" y="48" class="s-tc">· udma_quiet(pe)：等 CQE（按对端）</text>
+            <text x="16" y="68" class="s-tc">· 立即数/聚合批需 CONFIG.cqe=1</text>
+            <text x="16" y="88" class="s-tc">· defer/submit 聚合提交</text>
+            <text x="16" y="108" class="s-tc">· 原子：CAS/SWAP/STORE/LOAD/FAA</text>
+            <text x="16" y="128" class="s-tc">· 仅 950（__NPU_ARCH__==3510）</text>
+          </g>
+        </svg>
+        </div>
+        <div class="foot">UDMA 把"地址 + 权限 + 语义"都编进 SQE：EID 定端点、jetty 定服务入口、token 做权限校验——rkey 时代的 MR 注册被"令牌"取代。</div>
+      </div>
+
+      <div class="codeblock"><div class="hd"><span class="file">src/device/gm2gm/engine/shmemi_device_udma.h · 关键结构（节选）</span></div>
+<pre><span class="kw">enum class</span> aclshmemi_udma_opcode_t : uint32_t {
+    UDMA_OP_SEND, UDMA_OP_WRITE, UDMA_OP_WRITE_WITH_IMM,
+    UDMA_OP_WRITE_WITH_NOTIFY,   <span class="cm">// 搬运 + 信号（put-with-signal 一步到位）</span>
+    UDMA_OP_READ, UDMA_OP_CAS, UDMA_OP_ATOMIC_SWAP,
+    UDMA_OP_ATOMIC_STORE, UDMA_OP_ATOMIC_LOAD, UDMA_OPCODE_FAA,
+    UDMA_OP_WRITE_WITH_REDUCE = 0x10, <span class="cm">// 自定义：提交时转换为 WRITE + udf 归约语义</span>
+};
+<span class="kw">struct</span> aclshmemi_ubmem_info_t {   <span class="cm">// 控制面交换来的对端"码头信息"</span>
+    uint32_t tpn;              <span class="cm">// tp_id：简易/完整传输层</span>
+    uint32_t tid;              <span class="cm">// SQE 的 rmt_jetty_or_seg_id</span>
+    uint32_t rmt_token_value;  <span class="cm">// 对端令牌（权限）</span>
+    uint64_t addr;             <span class="cm">// 对端地址</span>
+    uint64_t eid_addr;         <span class="cm">// 对端 EID</span>
+};</pre></div>
+
+      <details class="deep"><summary>🔬 深入：flag 组合的静态约束与 HW/SW doorbell</summary><div class="body">
+        <ul>
+          <li><b>flag 位</b>：<code class="inline">odr</code>（乱序控制 0..7）、<code class="inline">fence</code>、<code class="inline">se</code>（ signaled event，暂未开放）、<code class="inline">cqe</code>（是否生成完成项）。用 <code class="inline">aclshmemx_udma_op_config_t</code> 以 <b>模板常量</b>传入，编译期 static_assert 校验组合（如"原子必须 cqe=1"、"defer 批必须 cqe=0"）。</li>
+          <li><b>doorbell 模式</b>：HW_DB（写硬件寄存器）与 SW_DB（软件轮询队列头）两种；由控制面按平台配置。</li>
+          <li><b>多 QP</b>：<code class="inline">udmaQpConfig.qpNum</code> 可配多 QP；QP 表（sq/rq/scq/rcq/mem 五张）按 slot×qp_num 平铺，device 侧一次寻址即可取到。</li>
+        </ul>
+        <span class="src">src/host/transport/device_udma/</span><span class="src">examples/udma_demo · udma_atomic_add · one_multi_path</span>
+      </div></details>
+    </div>
+  </div>
+
+  <!-- 引擎对比 -->
+  <h3 id="s-65">6.5 四引擎横向对比</h3>
+  <table class="tbl">
+    <tr><th style="width:120px"></th><th>🚚 MTE</th><th>📋 SDMA</th><th>✈️ RDMA/RoCE</th><th>🏭 UDMA/UB</th></tr>
+    <tr><td><b>硬件本体</b></td><td>AICore 旁路搬运单元（MTE2/MTE3 流水级）</td><td>系统级 STARS 引擎（通道队列）</td><td>RoCE 网卡（IN_DIE/XSCALE/HNS1825）</td><td>UB 灵衢总线（URMA/UBMEM）</td></tr>
+    <tr><td><b>提交方式</b></td><td>搬运指令 + SetFlag/WaitFlag 事件</td><td>填 SQE → 敲 doorbell</td><td>构造 WQE → SQ → doorbell → CQE</td><td>构造 SQE（EID/token）→ doorbell → CQE</td></tr>
+    <tr><td><b>是否占 AICore</b></td><td><b>占用</b>（发指令 + 等事件）</td><td>不占用（异步）</td><td>仅提交阶段占用</td><td>仅提交阶段占用</td></tr>
+    <tr><td><b>寻址要素</b></td><td>换算后的远端 VA（HCCS 直达）</td><td>换算后的 VA（引擎代发）</td><td>remote VA + <b>rkey</b></td><td>rmt_addr + <b>EID + jetty + token</b></td></tr>
+    <tr><td><b>覆盖通路</b></td><td>D2D/D2H/H2D/D2rH/rH2D（全通路）</td><td>D2D/D2H/H2D</td><td>跨节点 NPU↔NPU、D2rH/rH2D</td><td>950 全层级（MESH/CLOS/UBOE）+ relay</td></tr>
+    <tr><td><b>原子能力</b></td><td>950 原生；910 走 UB+原子写模拟</td><td>—</td><td>网卡原生 FA/CAS</td><td>CAS/SWAP/STORE/LOAD/FAA</td></tr>
+    <tr><td><b>特色</b></td><td>延迟最低；UB↔GM 直连变体</td><td>计算搬运重叠；CMO L2 预取</td><td>跨机主力；XSCALE 聚合批</td><td>WRITE_WITH_NOTIFY/REDUCE；relay</td></tr>
+    <tr><td><b>平台</b></td><td>910 + 950</td><td>仅 910A3（arch 2201）</td><td>910 + 950</td><td>仅 950（arch 3510）</td></tr>
+    <tr><td><b>典型源码</b></td><td class="mono-t" style="font-size:11px">engine/shmem_device_mte.hpp</td><td class="mono-t" style="font-size:11px">engine/shmem_device_sdma.hpp</td><td class="mono-t" style="font-size:11px">engine/shmem_device_rdma.hpp + backends</td><td class="mono-t" style="font-size:11px">engine/shmem_device_udma.hpp</td></tr>
+  </table>
+
+  <div class="callout key"><span class="ic">🔑</span><div><b>怎么选</b>：同机小消息 → MTE（最低延迟）；同机大块 + 要重叠 → SDMA（910A3）；跨机 → RDMA；950 优先 UDMA（能力最全： NOTIFY/REDUCE/relay）。实际运行时由 <b>topo_list[pe]</b> 的引擎位图 + init 的 <b>dataOpType</b> 掩码共同决定（第 8 章的选路模拟器可以玩）。</div></div>
+</section>
+
+<!-- ============ CH7 同步与内存保序 ============ -->
+<section class="chapter" id="ch7">
+  <h2><span class="n sync">7</span>同步与内存保序：让"快"不变成"乱"</h2>
+  <p class="lede">单边通信把同步责任交还给了程序员。SHMEM 提供三层原语：<b>点对点 signal</b>（等一个变量）、<b>集合 barrier/sync</b>（等一群 PE）、<b>quiet/fence</b>（等自己的写落地）。</p>
+
+  <h3 id="s-sig">7.1 点对点：signal_wait_until 自旋等待</h3>
+  <p>生产者用 <code class="inline">signal_set/add</code>（或 put-with-signal）写对端 signal 变量；消费者用 <code class="inline">wait_until / test</code> 系列<b>自旋轮询</b>该变量，支持 eq/ne/gt/ge/lt/le 与 all/any/some（+vector）组合。</p>
+  <div class="callout warn"><span class="ic">⚠️</span><div><b>cacheline 独占</b>：每个同步槽必须独占一条 64B cacheline。如果两个信号变量挤在同一条 cacheline，对端的并发写会互相"冲掉"（伪共享 + 写合并），出现<b>信号丢失</b>——源码注释里专门给了这个反例。SHMEM 的 sync_pool 按 <code class="inline">ACLSHMEM_SYNCBIT_SIZE=64B</code> 切槽保证这一点。</div></div>
+
+  <h3 id="s-bar">7.2 集合 barrier：从"点名"到"散播"</h3>
+  <p>SHMEM 的 device 侧 barrier 是<b>两级结构</b>：先 <b>sync_core</b>（本 NPU 内多核对齐，优先硬件 <code class="inline">SyncAll</code>，退化为软件对数散播），再 <b>sync_npu</b>（跨 NPU，四代算法按 team 大小自动选择）：</p>
+  <table class="tbl">
+    <tr><th style="width:90px">算法</th><th>思路</th><th>信号量</th><th>适用</th></tr>
+    <tr><td><b>v1 散播</b></td><td>经典 dissemination：每轮向"距离 ×2"的邻居发信号并等"距离 ÷2"的邻居</td><td>N·log₂N</td><td>通用基线</td></tr>
+    <tr><td><b>v2 分组散播</b></td><td>k 元散播，一轮联系 k−1 个邻居</td><td>N·log_k N</td><td>大 team 降轮数</td></tr>
+    <tr><td><b>v3 集中拉取</b></td><td>各 PE 写自己槽，前 k 个 AIV <b>轮询拉取</b>所有远端槽，再放行</td><td>N 次读</td><td>team ≤ 32 或 AIV 数充足</td></tr>
+    <tr><td><b>v4 k 元推送</b></td><td>AIV0 推送"代次计数"，其余核相位轮询本地 GM（避免远端轮询）</td><td>~N</td><td>大 team 主力（radix 32→320 / 16→2816 / 8→更大）</td></tr>
+  </table>
+
+  <div class="fig">
+    <div class="cap">🎮 <b>图 7-1 · Barrier 算法动画模拟器</b>（选算法和 PE 数，点播放，观察轮数与信号量）</div>
+    <div class="body">
+      <div class="ctrl">
+        <label>算法</label>
+        <select id="barAlgo"><option value="v1">v1 · dissemination 散播</option><option value="v3">v3 · 集中拉取（root 轮询）</option></select>
+        <label>PE 数</label>
+        <select id="barN"><option>4</option><option selected>8</option><option>16</option></select>
+        <button class="btn sm" id="barPlay">▶ 播放</button>
+        <button class="btn sm ghost" id="barStep">单步 ▸</button>
+        <button class="btn sm ghost" id="barReset">重置</button>
+      </div>
+      <svg viewBox="0 0 680 430" id="barSvg" role="img" aria-label="barrier 动画"></svg>
+      <div class="statusline" id="barStatus">选择算法后点"播放"。</div>
+    </div>
+    <div class="foot">v1 的精髓：<b>步长每轮翻倍</b>（1→2→4…），log₂N 轮后所有人都"知道"了所有人；每个 rank 每轮恰好收发 1 个信号，负载完全均匀。v3 则把"N 个写"换成"root 的 N 个读"。</div>
+  </div>
+
+  <div class="codeblock"><div class="hd"><span class="file">src/device/gm2gm/shmemi_device_cc.h · v1 散播核心（节选）</span></div>
+<pre><span class="kw">for</span> (shift = 1; shift &lt; size; shift &lt;&lt;= 1) {              <span class="cm">// 步长翻倍：1,2,4,…</span>
+    partner_dst = (my_pe + shift) % size;                 <span class="cm">// 向"下游"发信号</span>
+    partner_src = (my_pe + size - shift) % size;          <span class="cm">// 等"上游"的信号</span>
+    <span class="cm">// 信号 = 代次计数（generation counter），天然免疫上一轮残留</span>
+    aclshmemi_signal_set(&amp;sync_pool[team][partner_dst][slot], pe_map, counter);
+    aclshmemi_wait_until_eq_for_barrier(&amp;sync_pool[team][my_pe][slot], counter);
+}</pre></div>
+
+  <div class="callout key"><span class="ic">🔑</span><div><b>为什么信号是"计数"而不是"布尔"？</b>每个 team 的同步槽会被<b>反复使用</b>。若用 bool 置位，上一轮残留的 true 会让下一轮"秒过"（假同步）。用每轮 +1 的 <b>generation counter</b>，等待条件是"值 ≥ 本轮代次"，历史值天然失效。这正是 SYNC_ARRAY_SIZE 里给每 team 预留多槽 + 计数的原因。</div></div>
+
+  <details class="deep"><summary>🔬 深入：v3/v4 的调度细节与 A2/A3 的 FFTS</summary><div class="body">
+    <ul>
+      <li><b>调度</b>：<code class="inline">aclshmemi_sync</code> 里 team_size≤32 或 AIV 数 ≥ team_size 时选 v3，否则 v4；v4 的 k 按容量公式选（32/16/8），slot 容量由 SYNC_ARRAY_SIZE / SYNCBIT_SIZE 决定。</li>
+      <li><b>vec 变体</b>：<code class="inline">aclshmemx_barrier_vec</code>（ACLSHMEM_GLOBAL_VECTOR，core_ratio 0:1 纯矢量核）只同步矢量核；普通 barrier 同步全部核。</li>
+      <li><b>FFTS</b>：A2/A3 上 barrier kernel 入口先 <code class="inline">SetSyncBaseAddr(util_get_ffts_config())</code> 启用芯片级快速同步单元做<b>核内</b>对齐；950 不用 FFTS，改为 team 同步池方案。</li>
+      <li><b>语义差别</b>：<code class="inline">sync</code> 只保证本地 store 可见；<code class="inline">barrier</code> 额外保证此前远程操作完成（实现上 barrier=sync&lt;false&gt;，quiet 语义并入）。</li>
+    </ul>
+    <span class="src">src/device/gm2gm/shmemi_device_cc.h</span><span class="src">src/device/gm2gm/shmemi_device_p2p_sync.{h,cpp}</span>
+  </div></details>
+
+  <h3 id="s-quiet">7.3 quiet / fence / DCCI：把"我以为写了"变成"对端真的看到了"</h3>
+  <div class="fig">
+    <div class="cap">🖼️ <b>图 7-2 · aclshmem_quiet 的三段式收尾</b></div>
+    <div class="body">
+    <svg viewBox="0 0 960 240" role="img" aria-label="quiet 流程">
+      <rect x="16" y="30" width="280" height="150" rx="12" class="s-panel"/>
+      <text x="156" y="58" text-anchor="middle" class="s-t">① 排空指令流水</text>
+      <text x="156" y="86" text-anchor="middle" class="s-tc mono-t">AscendC::PipeBarrier&lt;PIPE_ALL&gt;()</text>
+      <text x="156" y="112" text-anchor="middle" class="s-tc">保证此前发出的所有搬运指令</text>
+      <text x="156" y="130" text-anchor="middle" class="s-tc">都已提交到各引擎</text>
+      <text x="156" y="158" text-anchor="middle" class="s-tc">（本核视角的"发出完成"）</text>
+
+      <rect x="340" y="30" width="300" height="150" rx="12" class="s-panel"/>
+      <text x="490" y="58" text-anchor="middle" class="s-t">② 按引擎等"落对端"</text>
+      <text x="490" y="84" text-anchor="middle" class="s-tc">for pe in 0..npes（查 topo_list[pe]）:</text>
+      <text x="490" y="104" text-anchor="middle" class="s-tc"><tspan fill="#6d28d9" font-weight="700">ROCE 位 → roce_quiet(pe)</tspan>（轮询 CQ）</text>
+      <text x="490" y="124" text-anchor="middle" class="s-tc"><tspan fill="#0e7490" font-weight="700">UDMA 位 → udma_quiet(pe)</tspan>（等 CQE）</text>
+      <text x="490" y="144" text-anchor="middle" class="s-tc"><tspan fill="#047857" font-weight="700">SDMA 位 → sdma_quiet</tspan>（本核队列一次即可）</text>
+      <text x="490" y="168" text-anchor="middle" class="s-tc">Host 预计算 quiet_transport_mask，为 0 则跳过循环</text>
+
+      <rect x="684" y="30" width="260" height="150" rx="12" fill="#fde8e8" stroke="#e11d48" stroke-width="1.5"/>
+      <text x="814" y="58" text-anchor="middle" class="s-t" fill="#be123c">③ 刷数据缓存</text>
+      <text x="814" y="86" text-anchor="middle" class="s-tc mono-t">dcci_entire_cache()</text>
+      <text x="814" y="112" text-anchor="middle" class="s-tc">AICore 标量 cache → GM/HBM</text>
+      <text x="814" y="130" text-anchor="middle" class="s-tc">不刷：对端可能读到旧值！</text>
+      <text x="814" y="158" text-anchor="middle" class="s-tc">配套：dcci_cacheline / dsb_all</text>
+
+      <path d="M296 105 H 340" class="s-edge" stroke="#e11d48" stroke-width="2" marker-end="url(#ah-r)"/>
+      <path d="M640 105 H 684" class="s-edge" stroke="#e11d48" stroke-width="2" marker-end="url(#ah-r)"/>
+      <text x="480" y="216" text-anchor="middle" class="s-tc">aclshmem_fence() 当前实现等价于 quiet()；nbi 接口之后必须配 quiet/fence 才有"完成"与"顺序"保证。</text>
+    </svg>
+    </div>
+    <div class="foot">MO（Memory Ordering）模块还提供 submit_state 批处理句柄（aclshmemx_defer_t / submit_t）：把多个引擎操作攒成一批统一提交。</div>
+  </div>
+
+  <div class="callout ana"><span class="ic">🌰</span><div><b>类比</b>：quiet 就像"发货三连"——①把手里所有快递单都交出去（PipeBarrier）；②等每条线路的物流回执（引擎 quiet）；③把白板上的备忘录誊到正式账本（DCCI 刷缓存）。少任何一步，对端都可能"查无此货"。</div></div>
+</section>
+
+<!-- ============ CH8 拓扑与选路 ============ -->
+<section class="chapter" id="ch8">
+  <h2><span class="n">8</span>硬件拓扑与选路：topo_list 的由来</h2>
+  <p class="lede">同一个 <code class="inline">aclshmem_put</code>，落在 910 的同机邻居和 950 的跨柜对端，走的是完全不同的硬件路。init 阶段把结论算成一张 <b>topo_list[pe]</b> 位图表，运行期 O(1) 查表选引擎。</p>
+
+  <div class="tabwrap" data-group="topo">
+    <div class="tabs">
+      <button data-tab="t910" class="active">910 代际 · HCCS/SIO</button>
+      <button data-tab="t950">950 代际 · UB 分层组网</button>
+    </div>
+
+    <div class="tabpanel active" data-panel="t910">
+      <div class="fig">
+        <div class="cap">🖼️ <b>图 8-1 · 910 服务器拓扑：HCCS 全互联 + PCIe 出网</b></div>
+        <div class="body">
+        <svg viewBox="0 0 960 380" role="img" aria-label="910 拓扑">
+          <rect x="20" y="20" width="920" height="280" rx="14" class="s-soft"/>
+          <text x="36" y="44" class="s-t">单机 8 NPU（HCCS 全互联 · 示意）</text>
+          <!-- mesh -->
+          <g id="npus">
+            <g transform="translate(80,80)"><rect width="120" height="64" rx="10" class="s-node"/><text x="60" y="26" text-anchor="middle" class="s-t">NPU 0</text><text x="60" y="46" text-anchor="middle" class="s-tc">PE 0</text></g>
+            <g transform="translate(240,80)"><rect width="120" height="64" rx="10" class="s-node"/><text x="60" y="26" text-anchor="middle" class="s-t">NPU 1</text><text x="60" y="46" text-anchor="middle" class="s-tc">PE 1</text></g>
+            <g transform="translate(400,80)"><rect width="120" height="64" rx="10" class="s-node"/><text x="60" y="26" text-anchor="middle" class="s-t">NPU 2</text><text x="60" y="46" text-anchor="middle" class="s-tc">PE 2</text></g>
+            <g transform="translate(560,80)"><rect width="120" height="64" rx="10" class="s-node"/><text x="60" y="26" text-anchor="middle" class="s-t">NPU 3</text><text x="60" y="46" text-anchor="middle" class="s-tc">PE 3</text></g>
+            <g transform="translate(80,210)"><rect width="120" height="64" rx="10" class="s-node"/><text x="60" y="26" text-anchor="middle" class="s-t">NPU 4</text><text x="60" y="46" text-anchor="middle" class="s-tc">PE 4</text></g>
+            <g transform="translate(240,210)"><rect width="120" height="64" rx="10" class="s-node"/><text x="60" y="26" text-anchor="middle" class="s-t">NPU 5</text><text x="60" y="46" text-anchor="middle" class="s-tc">PE 5</text></g>
+            <g transform="translate(400,210)"><rect width="120" height="64" rx="10" class="s-node"/><text x="60" y="26" text-anchor="middle" class="s-t">NPU 6</text><text x="60" y="46" text-anchor="middle" class="s-tc">PE 6</text></g>
+            <g transform="translate(560,210)"><rect width="120" height="64" rx="10" class="s-node"/><text x="60" y="26" text-anchor="middle" class="s-t">NPU 7</text><text x="60" y="46" text-anchor="middle" class="s-tc">PE 7</text></g>
+          </g>
+          <!-- full mesh lines (代表性连线) -->
+          <g stroke="#94a3b8" stroke-width="1" opacity=".55" fill="none">
+            <path d="M200 112 H 240"/><path d="M360 112 H 400"/><path d="M520 112 H 560"/>
+            <path d="M200 242 H 240"/><path d="M360 242 H 400"/><path d="M520 242 H 560"/>
+            <path d="M140 144 V 210"/><path d="M300 144 V 210"/><path d="M460 144 V 210"/><path d="M620 144 V 210"/>
+            <path d="M200 100 C 220 60, 380 60, 400 92"/><path d="M200 230 C 220 280, 380 280, 400 238"/>
+            <path d="M200 124 C 240 170, 360 190, 400 224"/><path d="M360 124 C 390 160, 440 170, 460 210"/>
+          </g>
+          <text x="330" y="335" text-anchor="middle" class="s-tc">HCCS：任意两 NPU 直连（全互联，无交换芯片）→ MTE 直驱 p2p 的物理基础</text>
+          <!-- A3 SIO -->
+          <rect x="740" y="80" width="180" height="90" rx="12" fill="#fef3e2" stroke="#d97706"/>
+          <text x="830" y="106" text-anchor="middle" class="s-t" fill="#b45309" font-size="12.5">A3：片内双 Die</text>
+          <text x="830" y="128" text-anchor="middle" class="s-tc">Die↔Die 走 SIO 链路</text>
+          <text x="830" y="148" text-anchor="middle" class="s-tc">（同一颗芯片内部）</text>
+          <path d="M680 112 C 700 100, 716 96, 740 104" class="s-edge" stroke="#d97706" marker-end="url(#ah-m)"/>
+          <!-- host + nic -->
+          <rect x="740" y="200" width="180" height="74" rx="12" class="s-node"/>
+          <text x="830" y="226" text-anchor="middle" class="s-t" font-size="12.5">Host CPU + RoCE 网卡</text>
+          <text x="830" y="248" text-anchor="middle" class="s-tc">PCIe 挂载 · 跨机出口</text>
+          <path d="M680 242 C 700 240, 716 238, 740 238" class="s-edge" marker-end="url(#ah)"/>
+          <text x="830" y="330" text-anchor="middle" class="s-tc">跨节点 → RDMA(RoCE)；同机 → MTE(HCCS)；A3 可选 SDMA</text>
+        </svg>
+        </div>
+      </div>
+      <p class="small">选路结论：910 上 <code class="inline">topo_list[同机pe] = MTE</code>（若启用 SDMA 则加 SDMA 位），<code class="inline">topo_list[跨机pe] = ROCE</code>。CMake 中 <code class="inline">ACLSHMEM_HCCS_SIO_LINK</code> 探测 <code class="inline">aclrtMemMapSelectedLink</code> 符号决定 SIO 链路支持（examples/hccs_sio_link）。</p>
+    </div>
+
+    <div class="tabpanel" data-panel="t950">
+      <div class="fig">
+        <div class="cap">🖼️ <b>图 8-2 · 950 分层组网：L0 MESH / L1 CLOS 超节点 / L2 集群</b>（EID 16 字节端点编址）</div>
+        <div class="body">
+        <svg viewBox="0 0 960 470" role="img" aria-label="950 拓扑">
+          <!-- L0 -->
+          <rect x="20" y="16" width="920" height="150" rx="14" fill="#e6f6fb" stroke="#0891b2" stroke-dasharray="6 4"/>
+          <text x="36" y="40" class="s-t" fill="#0e7490">层级 0 · 板内/框内 MESH（时延最低）</text>
+          <g>
+            <g transform="translate(60,60)"><rect width="90" height="44" rx="9" class="s-node"/><text x="45" y="26" text-anchor="middle" class="s-tc" font-weight="700">NPU</text></g>
+            <g transform="translate(180,60)"><rect width="90" height="44" rx="9" class="s-node"/><text x="45" y="26" text-anchor="middle" class="s-tc" font-weight="700">NPU</text></g>
+            <g transform="translate(300,60)"><rect width="90" height="44" rx="9" class="s-node"/><text x="45" y="26" text-anchor="middle" class="s-tc" font-weight="700">NPU</text></g>
+            <g transform="translate(420,60)"><rect width="90" height="44" rx="9" class="s-node"/><text x="45" y="26" text-anchor="middle" class="s-tc" font-weight="700">NPU</text></g>
+            <g transform="translate(540,60)"><rect width="90" height="44" rx="9" class="s-node"/><text x="45" y="26" text-anchor="middle" class="s-tc" font-weight="700">NPU</text></g>
+            <g transform="translate(660,60)"><rect width="90" height="44" rx="9" class="s-node"/><text x="45" y="26" text-anchor="middle" class="s-tc" font-weight="700">NPU</text></g>
+            <g transform="translate(780,60)"><rect width="90" height="44" rx="9" class="s-node"/><text x="45" y="26" text-anchor="middle" class="s-tc" font-weight="700">NPU</text></g>
+          </g>
+          <g stroke="#0891b2" stroke-width="1.1" opacity=".7" fill="none">
+            <path d="M150 82 H 180"/><path d="M270 82 H 300"/><path d="M390 82 H 420"/><path d="M510 82 H 540"/><path d="M630 82 H 660"/><path d="M750 82 H 780"/>
+            <path d="M150 68 C 180 44, 270 44, 300 66"/><path d="M270 68 C 300 40, 390 40, 420 66"/><path d="M390 68 C 420 38, 510 38, 540 66"/>
+            <path d="M105 104 V 130 M195 104 V 130 M315 104 V 130 M435 104 V 130 M555 104 V 130 M675 104 V 130 M795 104 V 130" opacity=".35"/>
+          </g>
+          <text x="500" y="148" text-anchor="middle" class="s-tc" fill="#0e7490">每对 NPU 直连物理链路 · 每端口一对独立 EID · 8 NPU = 28 对地址</text>
+
+          <!-- L1 -->
+          <rect x="20" y="180" width="920" height="130" rx="14" fill="#eef4ff" stroke="#2563eb" stroke-dasharray="6 4"/>
+          <text x="36" y="204" class="s-t" fill="#1d4ed8">层级 1 · 超节点 CLOS（scale-up，经交换芯片 · 多平面分担）</text>
+          <g>
+            <rect x="140" y="222" width="150" height="44" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="215" y="248" text-anchor="middle" class="s-tc" font-weight="700">交换平面 A</text>
+            <rect x="390" y="222" width="150" height="44" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="465" y="248" text-anchor="middle" class="s-tc" font-weight="700">交换平面 B</text>
+            <rect x="640" y="222" width="150" height="44" rx="9" fill="#dbeafe" stroke="#2563eb"/><text x="715" y="248" text-anchor="middle" class="s-tc" font-weight="700">…多平面</text>
+          </g>
+          <path d="M215 222 V 166 M465 222 V 166 M715 222 V 166" class="s-edge" stroke="#2563eb" marker-start="url(#ah-b)"/>
+          <text x="500" y="294" text-anchor="middle" class="s-tc" fill="#1d4ed8">一个 NPU 每平面一个 EID · 集合通信可跨平面分担流量 · relay 中继解决非直连</text>
+
+          <!-- L2 -->
+          <rect style="fill:var(--soft);stroke:var(--edge)" x="20" y="324" width="920" height="120" rx="14" stroke-dasharray="6 4"/>
+          <text x="36" y="348" class="s-t">层级 2 · 集群 scale-out（RoCE / UBOE · IP 编址）</text>
+          <g>
+            <rect x="140" y="366" width="170" height="44" rx="9" class="s-node"/><text x="225" y="392" text-anchor="middle" class="s-tc" font-weight="700">跨节点交换机/网卡</text>
+            <rect x="390" y="366" width="170" height="44" rx="9" class="s-node"/><text x="475" y="392" text-anchor="middle" class="s-tc" font-weight="700">其他超节点</text>
+            <rect x="640" y="366" width="170" height="44" rx="9" class="s-node"/><text x="725" y="392" text-anchor="middle" class="s-tc" font-weight="700">存储/参数面</text>
+          </g>
+          <path d="M310 388 H 390" class="s-edge"/><path d="M560 388 H 640" class="s-edge"/>
+          <text x="500" y="434" text-anchor="middle" class="s-tc">地址类型为 IP（区别于 L0/L1 的 EID）→ RDMA(RoCE) 或 UDMA(UBOE) 通路</text>
+        </svg>
+        </div>
+        <div class="foot">EID 格式（16B）：subnet_prefix + interface_id，JSON 里显示为 32 个 hex 字符。拓扑发现由 rootinfo 模块完成（dcmi 驱动 + XML 解析 + NPU-NIC 亲和匹配），工具 root_info_generate 可直接查看。</div>
+      </div>
+      <p class="small">950 上 <code class="inline">topo_list[pe]</code> 依据 rootinfo 计算的可达层级：L0/L1 → UDMA 位，L2 → ROCE（或 UBOE）位。</p>
+    </div>
+  </div>
+
+  <h3 id="s-route">8.1 交互：选路模拟器</h3>
+  <p class="small">模拟 init 后 device_state 里 topo_list 与运行期引擎选择的逻辑（简化版）。</p>
+  <div class="ctrl">
+    <label>平台</label>
+    <select id="rwPlat"><option value="910">910（A2/A3）</option><option value="950">950（UB 组网）</option></select>
+    <label>对端位置</label>
+    <select id="rwPeer">
+      <option value="host">本机 Host 内存</option>
+      <option value="same">同节点其他 NPU（直连）</option>
+      <option value="cross">跨节点 NPU（网络可达）</option>
+      <option value="relay">跨节点 · 需中继（CLOS 非直连）</option>
+    </select>
+    <label>init 启用引擎</label>
+    <span class="chip mte"><input type="checkbox" id="rwMte" checked> MTE</span>
+    <span class="chip sdma"><input type="checkbox" id="rwSdma" checked> SDMA</span>
+    <span class="chip rdma"><input type="checkbox" id="rwRdma" checked> RDMA</span>
+    <span class="chip udma"><input type="checkbox" id="rwUdma" checked> UDMA</span>
+    <button class="btn sm" id="rwBtn">计算选路 →</button>
+  </div>
+  <div class="out" id="rwOut">点击"计算选路"查看结果。</div>
+</section>
+
+<!-- ============ CH9 一次 put 的旅程 ============ -->
+<section class="chapter" id="ch9">
+  <h2><span class="n">9</span>一次 put 的完整旅程：端到端串联</h2>
+  <p class="lede">把前八章串成一条线。点击流水线上的任意节点（或用自动播放），看一次 <code class="inline">aclshmem_putmem</code> 从应用调用到对端可见的每一步。</p>
+
+  <div class="fig">
+    <div class="cap">🎬 <b>图 9-1 · put 全链路流水线</b>（点击节点查看细节；▶ 自动播放）</div>
+    <div class="body">
+    <svg viewBox="0 0 960 210" id="journeySvg" role="img" aria-label="put 旅程">
+      <defs>
+        <linearGradient id="jg" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#0891b2"/>
+        </linearGradient>
+      </defs>
+      <path d="M60 70 H 900" stroke="url(#jg)" stroke-width="3" opacity=".25"/>
+      <g class="jnode" data-step="0" transform="translate(24,40)" style="cursor:pointer">
+        <rect width="118" height="62" rx="12" class="s-node" id="jn0"/><text x="59" y="26" text-anchor="middle" class="s-t" font-size="11.6">① 应用调用</text><text x="59" y="45" text-anchor="middle" class="s-tc">putmem(dst,src,n,pe)</text>
+      </g>
+      <g class="jnode" data-step="1" transform="translate(158,40)" style="cursor:pointer">
+        <rect width="118" height="62" rx="12" class="s-node" id="jn1"/><text x="59" y="26" text-anchor="middle" class="s-t" font-size="11.6">② kernel 下发</text><text x="59" y="45" text-anchor="middle" class="s-tc">putmem&lt;&lt;&lt;stream&gt;&gt;&gt;</text>
+      </g>
+      <g class="jnode" data-step="2" transform="translate(292,40)" style="cursor:pointer">
+        <rect width="118" height="62" rx="12" class="s-node" id="jn2"/><text x="59" y="26" text-anchor="middle" class="s-t" font-size="11.6">③ 地址换算</text><text x="59" y="45" text-anchor="middle" class="s-tc">aclshmem_ptr</text>
+      </g>
+      <g class="jnode" data-step="3" transform="translate(426,40)" style="cursor:pointer">
+        <rect width="118" height="62" rx="12" class="s-node" id="jn3"/><text x="59" y="26" text-anchor="middle" class="s-t" font-size="11.6">④ 查表选引擎</text><text x="59" y="45" text-anchor="middle" class="s-tc">topo_list[pe]</text>
+      </g>
+      <g class="jnode" data-step="4" transform="translate(560,40)" style="cursor:pointer">
+        <rect width="118" height="62" rx="12" class="s-node" id="jn4"/><text x="59" y="26" text-anchor="middle" class="s-t" font-size="11.6">⑤ 引擎执行</text><text x="59" y="45" text-anchor="middle" class="s-tc">WQE/SQE/UB 流水</text>
+      </g>
+      <g class="jnode" data-step="5" transform="translate(694,40)" style="cursor:pointer">
+        <rect width="118" height="62" rx="12" class="s-node" id="jn5"/><text x="59" y="26" text-anchor="middle" class="s-t" font-size="11.6">⑥ 完成保序</text><text x="59" y="45" text-anchor="middle" class="s-tc">quiet + dcci</text>
+      </g>
+      <g class="jnode" data-step="6" transform="translate(828,40)" style="cursor:pointer">
+        <rect width="112" height="62" rx="12" class="s-node" id="jn6"/><text x="56" y="26" text-anchor="middle" class="s-t" font-size="11.6">⑦ 对端同步</text><text x="56" y="45" text-anchor="middle" class="s-tc">wait / barrier</text>
+      </g>
+      <g>
+        <path d="M142 71 H 158" class="s-edge" marker-end="url(#ah)"/><path d="M276 71 H 292" class="s-edge" marker-end="url(#ah)"/>
+        <path d="M410 71 H 426" class="s-edge" marker-end="url(#ah)"/><path d="M544 71 H 560" class="s-edge" marker-end="url(#ah)"/>
+        <path d="M678 71 H 694" class="s-edge" marker-end="url(#ah)"/><path d="M812 71 H 828" class="s-edge" marker-end="url(#ah)"/>
+      </g>
+      <text x="480" y="140" text-anchor="middle" class="s-tc">Host 侧（①②）→ AICore 内（③④⑤⑥）→ 对端 PE（⑦）</text>
+      <text x="480" y="162" text-anchor="middle" class="s-tc">shmem_putmem / shmem_put / shmemx_signal_op 组合可覆盖绝大多数单边通信场景</text>
+      <text x="480" y="186" text-anchor="middle" class="s-tc mono-t" font-size="10.5">本 PE: aclshmem_putmem(dst,src,n,pe) —— dst 是对称地址，src 是本地 GM 地址</text>
+    </svg>
+    </div>
+    <div class="foot"><div class="ctrl" style="margin:4px 0 0"><button class="btn sm" id="jPlay">▶ 自动播放</button><button class="btn sm ghost" id="jStop">■ 停止</button></div></div>
+  </div>
+
+  <div class="stepdetail" id="jDetail" style="min-height:230px"></div>
+
+  <div class="callout key"><span class="ic">🔑</span><div><b>性能关键点回顾</b>：①③④ 全是<b>寄存器级/查表级</b>操作（纳秒）；真正的开销在 ⑤ 的引擎提交与传输（微秒~毫秒级，随引擎和距离）；⑥ 只有需要"完成保证"时才做；⑦ 用 signal 而非 barrier 可以把同步范围缩到点对点。<b>小消息高并发场景</b>：低阶接口 + 每核独立 QP/sync_id，避免默认 buffer 串行化。</div></div>
+</section>
+
+<!-- ============ CH10 平台差异 ============ -->
+<section class="chapter" id="ch10">
+  <h2><span class="n">10</span>平台差异：910 vs 950 速查</h2>
+  <p class="lede">同一套代码用编译宏切平台（CMake 的 <code class="inline">SOC_TYPE</code> / <code class="inline">-xcce</code> vs <code class="inline">-xasc</code>）。差异集中在引擎、同步、RDMA 后端三块。</p>
+  <table class="tbl">
+    <tr><th style="width:150px">维度</th><th>910（A2 / A3）</th><th>Ascend 950</th></tr>
+    <tr><td><b>AICore 架构宏</b></td><td class="mono-t" style="font-size:11.5px">dav-c220 / __NPU_ARCH__==2201</td><td class="mono-t" style="font-size:11.5px">dav-c310 / __NPU_ARCH__==3510</td></tr>
+    <tr><td><b>卡间互联</b></td><td>HCCS（A3 片内双 Die 走 SIO）</td><td>UB 灵衢总线（MESH / CLOS / UBOE 分层）</td></tr>
+    <tr><td><b>可用引擎</b></td><td>MTE · SDMA(A3) · RDMA</td><td>MTE · RDMA · UDMA</td></tr>
+    <tr><td><b>核内同步</b></td><td>FFTS 硬件同步（SetSyncBaseAddr）</td><td>team 同步池（软件 v3/v4）</td></tr>
+    <tr><td><b>RDMA 后端</b></td><td>内置（verbs 风格）</td><td>XSCALE（云脉）/ HNS 1825 + IN_DIE</td></tr>
+    <tr><td><b>MTE 原子</b></td><td>UB + SetAtomicAdd 模拟</td><td>AtomicAdd/Cas/Exch 原生</td></tr>
+    <tr><td><b>特色能力</b></td><td>SDMA CMO（L2 预取）</td><td>UDMA relay / WRITE_WITH_REDUCE / MTE Atomic / UB↔GM</td></tr>
+    <tr><td><b>拓扑发现</b></td><td>HCCS/SIO 探测（aclrtMemMapSelectedLink）</td><td>rootinfo（EID 解析 · NPU-NIC 亲和）</td></tr>
+    <tr><td><b>编译模式</b></td><td class="mono-t" style="font-size:11.5px">bisheng -xcce</td><td class="mono-t" style="font-size:11.5px">bisheng -xasc（时间戳 ≥20260327）</td></tr>
+  </table>
+  <p class="small">关键编译宏：<code class="inline">ACLSHMEM_SOC_950</code>、<code class="inline">ACLSHMEM_RDMA_V2_SUPPORT</code>、<code class="inline">ACLSHMEM_RELAY_SUPPORT</code>、<code class="inline">ACLSHMEM_SIMT_SUPPORT</code>、<code class="inline">MULTI_INSTANCE</code>、<code class="inline">USE_SIMT</code>（SIMT 标量远访变体，include/device_simt）。</p>
+</section>
+
+<!-- ============ CH11 源码索引 ============ -->
+<section class="chapter" id="ch11">
+  <h2><span class="n">11</span>源码落点索引：按图索骥</h2>
+  <p class="lede">想验证书中任何结论，从这张表直接跳到文件。</p>
+  <table class="tbl">
+    <tr><th style="width:250px">主题</th><th>文件 / 目录</th></tr>
+    <tr><td>对外 API 汇总入口</td><td class="mono-t" style="font-size:12px">include/shmem.h</td></tr>
+    <tr><td>全局状态 / team / sync 结构</td><td class="mono-t" style="font-size:12px">include/host_device/shmem_common_types.h</td></tr>
+    <tr><td>地址空间与 HYBM 常量</td><td class="mono-t" style="font-size:12px">src/host/entity/mem_entity_def.h</td></tr>
+    <tr><td>device 元数据（固定 VA 读取）</td><td class="mono-t" style="font-size:12px">src/device/shmemi_device_meta.h · shmemi_device_common.hpp</td></tr>
+    <tr><td>init / finalize</td><td class="mono-t" style="font-size:12px">src/host/init/shmem_init.cpp · init/backends/shmem_init_backend.cpp</td></tr>
+    <tr><td>Bootstrap 控制面（TCP/KV/集合通信）</td><td class="mono-t" style="font-size:12px">src/host/bootstrap/（config_store/acc_links）</td></tr>
+    <tr><td>传输抽象 / 组合管理器</td><td class="mono-t" style="font-size:12px">src/host/transport/transport_manager.{h,cpp} · composite_transport_manager.h</td></tr>
+    <tr><td>RDMA 建链（MR/QP/拓扑）</td><td class="mono-t" style="font-size:12px">src/host/transport/device_rdma/</td></tr>
+    <tr><td>SDMA / UDMA 建链</td><td class="mono-t" style="font-size:12px">src/host/transport/device_sdma/ · device_udma/</td></tr>
+    <tr><td>950 拓扑发现（EID/rootinfo）</td><td class="mono-t" style="font-size:12px">src/host/transport/topo/rootinfo/ · tools/rootinfo/</td></tr>
+    <tr><td>MTE 引擎实现</td><td class="mono-t" style="font-size:12px">src/device/gm2gm/engine/shmem_device_mte.hpp · src/device/ub2gm/mte/</td></tr>
+    <tr><td>SDMA 引擎实现</td><td class="mono-t" style="font-size:12px">src/device/gm2gm/engine/shmem_device_sdma.hpp</td></tr>
+    <tr><td>RDMA 引擎 + 三后端</td><td class="mono-t" style="font-size:12px">src/device/gm2gm/engine/shmem_device_rdma.hpp · rdma_backends/{in_die,xscale,hns_1825}</td></tr>
+    <tr><td>UDMA 引擎实现</td><td class="mono-t" style="font-size:12px">src/device/gm2gm/engine/shmem_device_udma.hpp · shmemi_device_udma.h</td></tr>
+    <tr><td>barrier 四代算法</td><td class="mono-t" style="font-size:12px">src/device/gm2gm/shmemi_device_cc.h</td></tr>
+    <tr><td>quiet / fence / DCCI</td><td class="mono-t" style="font-size:12px">src/device/gm2gm/shmem_device_mo.hpp</td></tr>
+    <tr><td>P2P signal / wait</td><td class="mono-t" style="font-size:12px">src/device/gm2gm/shmemi_device_p2p_sync.{h,cpp}</td></tr>
+    <tr><td>高阶 RMA 内核封装</td><td class="mono-t" style="font-size:12px">src/device/gm2gm/shmemi_device_rma.cpp</td></tr>
+    <tr><td>device team 实现</td><td class="mono-t" style="font-size:12px">src/device/team/shmem_device_team.hpp</td></tr>
+    <tr><td>Python 封装</td><td class="mono-t" style="font-size:12px">src/python/shmem/ · src/host/python_wrapper/</td></tr>
+    <tr><td>样例（入门顺序建议）</td><td class="mono-t" style="font-size:12px">examples/init → notifywait → sdma → udma_demo → rdma_demo → kv_shuffle → torch_binding</td></tr>
+  </table>
+</section>
+
+<!-- ============ CH12 术语速查 ============ -->
+<section class="chapter" id="ch12">
+  <h2><span class="n">12</span>术语速查（可搜索）</h2>
+  <p class="lede">输入关键词过滤；覆盖文档与接口中出现的主要缩写。</p>
+  <div class="ctrl"><input type="text" id="glosFilter" placeholder="🔍 输入术语 / 中文 / 英文过滤，如：rkey、barrier、灵衢…" size="42">
+  <span class="small" id="glosCount"></span></div>
+  <table class="tbl" id="glosTable">
+    <thead><tr><th style="width:130px">术语</th><th style="width:210px">展开</th><th>含义</th></tr></thead>
+    <tbody>
+    <tr><td class="mono-t">PE</td><td>Processing Element</td><td>SHMEM 通信参与者编号（一个进程/rank/设备方）</td></tr>
+    <tr><td class="mono-t">PGAS</td><td>Partitioned Global Address Space</td><td>分区全局地址空间编程模型（对称内存的学术名）</td></tr>
+    <tr><td class="mono-t">Team</td><td>—</td><td>通信域：一组 PE 的子集，限定同步/集合操作范围；WORLD=0 默认全域</td></tr>
+    <tr><td class="mono-t">对称堆</td><td>Symmetric Heap</td><td>各 PE 各持一块等长堆；同序同大小 malloc 得到相同偏移</td></tr>
+    <tr><td class="mono-t">RMA</td><td>Remote Memory Access</td><td>单边远程内存访问（put/get）</td></tr>
+    <tr><td class="mono-t">AMO</td><td>Atomic Memory Operation</td><td>原子内存操作（add/swap/cas…）</td></tr>
+    <tr><td class="mono-t">SO</td><td>Signal Operation</td><td>信号操作：put-with-signal、signal_wait_until 等</td></tr>
+    <tr><td class="mono-t">MO</td><td>Memory Ordering</td><td>内存保序：quiet/fence 保证完成与顺序</td></tr>
+    <tr><td class="mono-t">NBI</td><td>Non-Blocking Immediate</td><td>*_nbi 后缀：立即返回，需配 quiet/fence</td></tr>
+    <tr><td class="mono-t">quiet / fence</td><td>—</td><td>等待本 PE 先前操作完成；fence 当前实现等价 quiet</td></tr>
+    <tr><td class="mono-t">MTE</td><td>Memory Transfer Engine</td><td>AICore 侧搬运引擎（MTE2: GM→UB / MTE3: UB→GM 流水级）</td></tr>
+    <tr><td class="mono-t">UB</td><td>Unified Buffer</td><td>AICore 私有高速暂存（也是 MTE 流水的 staging）</td></tr>
+    <tr><td class="mono-t">GM</td><td>Global Memory</td><td>全局内存（HBM），对称堆所在</td></tr>
+    <tr><td class="mono-t">SDMA</td><td>System DMA</td><td>系统级 DMA（STARS 引擎，SQE 队列化，仅 910A3）</td></tr>
+    <tr><td class="mono-t">RDMA / RoCE</td><td>Remote DMA over Converged Ethernet</td><td>跨节点直接内存访问；verbs 风格 WQE/SQ/CQ</td></tr>
+    <tr><td class="mono-t">UDMA</td><td>Unified DMA</td><td>950 统一 DMA，走 UB 灵衢总线（EID/jetty/token）</td></tr>
+    <tr><td class="mono-t">UB 总线（灵衢）</td><td>Unified Bus</td><td>华为新一代统一互联协议；UBMEM 内存语义 / URMA 远程内存访问</td></tr>
+    <tr><td class="mono-t">HCCS</td><td>Huawei Cache Coherent System</td><td>910 服务器内 CPU/NPU 高速一致互联</td></tr>
+    <tr><td class="mono-t">SIO</td><td>Serial I/O Link</td><td>A3 片内两个 Die 之间的互联通路</td></tr>
+    <tr><td class="mono-t">EID</td><td>Extended ID</td><td>16 字节 UB 网络端点地址（subnet_prefix+interface_id）</td></tr>
+    <tr><td class="mono-t">jetty / token</td><td>—</td><td>UDMA 的服务入口（码头）与访问令牌；取代 rkey 时代的 MR 授权</td></tr>
+    <tr><td class="mono-t">MR / lkey / rkey</td><td>Memory Region</td><td>RDMA 注册内存域；lkey 本地访问键 / rkey 远程访问键</td></tr>
+    <tr><td class="mono-t">QP / WQE / CQE</td><td>Queue Pair / Work/Completion QE</td><td>RDMA 队列对；工作队列元素（发件单）/ 完成队列元素（回执）</td></tr>
+    <tr><td class="mono-t">SQE / doorbell</td><td>Submission QE</td><td>SDMA/UDMA 提交队列元素；doorbell = 通知硬件取工单的"门铃"寄存器</td></tr>
+    <tr><td class="mono-t">HYBM</td><td>Hybrid Memory</td><td>底层混合内存库：entity（内存域）/ slice（物理内存）/ GVA（预留虚址）</td></tr>
+    <tr><td class="mono-t">GVA / GVM</td><td>Global Virtual Address/Memory</td><td>全局虚拟地址（20T–24T 预留区），对称堆排布其中</td></tr>
+    <tr><td class="mono-t">device_state</td><td>—</td><td>Host 状态在 NPU 元数据区的镜像（固定 VA），算子里直接读</td></tr>
+    <tr><td class="mono-t">FFTS</td><td>—</td><td>910 代际芯片级快速同步单元（SetSyncBaseAddr 启用）</td></tr>
+    <tr><td class="mono-t">DCCI / DSB</td><td>Data Cache Clean &amp; Invalidate</td><td>缓存清理/失效指令：把标量 cache 刷回 GM，跨 PE 可见性的保障</td></tr>
+    <tr><td class="mono-t">dissemination</td><td>—</td><td>散播 barrier 算法：步长翻倍，log₂N 轮收敛</td></tr>
+    <tr><td class="mono-t">relay</td><td>—</td><td>UDMA 中继路径：借中继 PE 的端口 EID 转发到非直连对端</td></tr>
+    <tr><td class="mono-t">D2D/D2H/H2D/D2rH/rH2D</td><td>Device/Host × 本/远</td><td>通路记法：设备到设备 / 设备到主机 / 到远端主机…</td></tr>
+    <tr><td class="mono-t">CMO</td><td>Cache Maintenance Op</td><td>缓存维护操作（如 L2 prefetch，sdma cmo_nbi）</td></tr>
+    <tr><td class="mono-t">aclgraph</td><td>—</td><td>昇腾整图捕获执行；SHMEM RDMA 支持在图中调用（rdma_aclgraph_demo）</td></tr>
+    <tr><td class="mono-t">高阶/低阶接口</td><td>high-level / low-level</td><td>屏蔽引擎的封装接口 vs 直接暴露引擎语义的接口（engine/ 目录）</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer>
+  <div>《SHMEM 架构与硬件原理 · 交互式说明书》 — 基于 gitcode.com/cann/shmem v1.6.0 源码走读编写 · 单文件离线版</div>
+  <div>图形与文字为源码抽象，字段名与代码保持一致；如与最新源码有出入，以仓库为准。</div>
+</footer>
+
+</main>
+</div>
+<button id="backtop" title="回到顶部">↑</button>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+
+/* ========== 主题 ========== */
+(function(){
+  const btn=$('themeBtn');
+  let saved=null; try{saved=localStorage.getItem('shmem-guide-theme');}catch(e){}
+  if(saved==='dark'){document.documentElement.setAttribute('data-theme','dark');btn.textContent='☀️ 浅色';}
+  btn.addEventListener('click',()=>{
+    const d=document.documentElement.getAttribute('data-theme')==='dark';
+    if(d){document.documentElement.removeAttribute('data-theme');btn.textContent='🌙 深色';}
+    else{document.documentElement.setAttribute('data-theme','dark');btn.textContent='☀️ 浅色';}
+    try{localStorage.setItem('shmem-guide-theme',d?'light':'dark');}catch(e){}
+  });
+})();
+
+/* ========== 进度条 / 回顶 ========== */
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  const p=h.scrollTop/(h.scrollHeight-h.clientHeight)*100;
+  $('progress').style.width=p+'%';
+  $('backtop').style.display=h.scrollTop>600?'block':'none';
+},{passive:true});
+$('backtop').addEventListener('click',()=>window.scrollTo({top:0,behavior:'smooth'}));
+
+/* ========== 目录：折叠 / 调宽 / 抽屉 / 双层高亮 ========== */
+(function(){
+  const page=document.querySelector('.page');
+  const toc=$('toc'), foldBtn=$('tocFold'), grab=$('tocGrab');
+  const MQ=(typeof window.matchMedia==='function')
+    ?window.matchMedia('(max-width:1000px)')
+    :{matches:false,addEventListener:null};
+  let folded=false, tocW=238;
+  try{
+    const w=parseInt(localStorage.getItem('shmem-guide-toc-w'),10);
+    if(w>=180&&w<=430)tocW=w;
+    folded=localStorage.getItem('shmem-guide-toc-folded')==='1';
+  }catch(e){}
+  function apply(){
+    page.style.setProperty('--toc-w',(folded&&!MQ.matches?46:tocW)+'px');
+    document.body.classList.toggle('toc-folded',folded&&!MQ.matches);
+    foldBtn.textContent=folded?'»':'«';
+    foldBtn.setAttribute('aria-expanded',String(!folded));
+    foldBtn.title=(folded?'展开':'折叠')+'目录（快捷键 [）';
+  }
+  function toggleFold(){
+    folded=!folded;
+    try{localStorage.setItem('shmem-guide-toc-folded',folded?'1':'0');}catch(e){}
+    apply();
+  }
+  foldBtn.addEventListener('click',toggleFold);
+  window.addEventListener('keydown',e=>{
+    if(e.key!=='[')return;
+    const t=e.target;
+    if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable))return;
+    if(MQ.matches)return;
+    toggleFold();
+  });
+  /* 拖拽右缘调宽（180–430px，持久化） */
+  grab.addEventListener('pointerdown',e=>{
+    if(folded||MQ.matches)return;
+    e.preventDefault();
+    grab.classList.add('on'); document.body.classList.add('toc-dragging');
+    const x0=e.clientX, w0=tocW;
+    function move(ev){
+      let w=w0+(ev.clientX-x0);
+      w=Math.max(180,Math.min(430,Math.round(w)));
+      tocW=w; page.style.setProperty('--toc-w',w+'px');
+    }
+    function up(){
+      grab.classList.remove('on'); document.body.classList.remove('toc-dragging');
+      try{localStorage.setItem('shmem-guide-toc-w',String(tocW));}catch(err){}
+      window.removeEventListener('pointermove',move);
+      window.removeEventListener('pointerup',up);
+    }
+    window.addEventListener('pointermove',move);
+    window.addEventListener('pointerup',up);
+  });
+  /* 移动端抽屉 */
+  $('tocMenu').addEventListener('click',()=>document.body.classList.toggle('toc-open'));
+  $('tocOverlay').addEventListener('click',()=>document.body.classList.remove('toc-open'));
+  if(MQ.addEventListener)MQ.addEventListener('change',()=>{document.body.classList.remove('toc-open');apply();});
+  apply();
+  /* 子节链接：先激活所在标签页，再跳转；移动端顺带收起抽屉 */
+  toc.addEventListener('click',e=>{
+    const a=e.target.closest('a'); if(!a)return;
+    const id=a.getAttribute('href').slice(1);
+    const el=document.getElementById(id);
+    if(el){
+      const panel=el.closest('.tabpanel');
+      if(panel){
+        const wrap=panel.closest('.tabwrap');
+        const tab=wrap&&wrap.querySelector('.tabs button[data-tab="'+panel.dataset.panel+'"]');
+        if(tab)tab.click();
+      }
+    }
+    if(MQ.matches)document.body.classList.remove('toc-open');
+  });
+  /* scrollspy：滚动位置判定，章节 + 子节双层高亮（隐藏 tabpanel 中的标题自动跳过） */
+  const chLinks={}, subLinks={};
+  toc.querySelectorAll('a').forEach(a=>{
+    const id=a.getAttribute('href').slice(1);
+    if(a.classList.contains('sub-item'))subLinks[id]=a; else chLinks[id]=a;
+  });
+  const heads=[];
+  document.querySelectorAll('main section.chapter').forEach(sec=>{
+    heads.push({el:sec,id:sec.id,sub:false});
+    sec.querySelectorAll('h3[id]').forEach(h=>heads.push({el:h,id:h.id,sub:true,ch:sec.id}));
+  });
+  let ticking=false;
+  function spy(){
+    ticking=false;
+    const y=150;
+    let curCh=null, curSub=null;
+    for(const h of heads){
+      if(h.el.closest('.tabpanel:not(.active)'))continue;  /* 未激活标签页内的标题 */
+      if(h.el.getBoundingClientRect().top<=y){
+        if(h.sub)curSub=h; else{curCh=h;curSub=null;}
+      }
+    }
+    Object.keys(chLinks).forEach(k=>chLinks[k].classList.remove('active'));
+    Object.keys(subLinks).forEach(k=>subLinks[k].classList.remove('active'));
+    if(curSub){
+      subLinks[curSub.id].classList.add('active');
+      if(chLinks[curSub.ch])chLinks[curSub.ch].classList.add('active');
+    }else if(curCh){
+      chLinks[curCh.id].classList.add('active');
+    }
+  }
+  window.addEventListener('scroll',()=>{
+    if(!ticking){ticking=true;requestAnimationFrame(spy);}
+  },{passive:true});
+  window.addEventListener('resize',()=>{
+    if(!ticking){ticking=true;requestAnimationFrame(spy);}
+  },{passive:true});
+  spy();
+  window.__spy=spy;   /* 供标签页切换后刷新 */
+})();
+
+/* ========== 标签页 ========== */
+document.querySelectorAll('.tabwrap').forEach(w=>{
+  const tabs=w.querySelector('.tabs');
+  tabs.addEventListener('click',e=>{
+    const b=e.target.closest('button[data-tab]'); if(!b)return;
+    tabs.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b));
+    w.querySelectorAll('.tabpanel').forEach(p=>p.classList.toggle('active',p.dataset.panel===b.dataset.tab));
+    if(window.__spy)window.__spy();   /* 切换后刷新目录高亮 */
+  });
+});
+
+/* ========== 通用步骤器 ========== */
+function bindStepper(btnSel,detailSel,data){
+  const btns=[...document.querySelectorAll(btnSel+' button')];
+  const detail=$(detailSel);
+  function show(i){
+    const d=data[i]; if(!d)return;
+    btns.forEach((b,j)=>b.classList.toggle('active',j===i));
+    let html='<h4>'+d.t+'</h4><p class="desc">'+d.d+'</p>';
+    if(d.code)html+='<div class="codeblock"><div class="hd"><span class="file">'+(d.f||'')+'</span></div><pre>'+d.code+'</pre></div>';
+    if(d.refs)html+='<div class="refs">'+d.refs.map(r=>'<span class="src">'+r+'</span>').join('')+'</div>';
+    detail.innerHTML=html;
+  }
+  btns.forEach(b=>b.addEventListener('click',()=>show(+b.dataset.s)));
+  show(0);
+}
+
+/* ========== 4.1 KV barrier 步骤 ========== */
+bindStepper('#barKvSteps','barKvDetail',[
+ {t:'① 各 PE 并发 ADD（原子计数）',
+  d:'每个 PE 向同一个键 <b>_BA</b>（barrier arrive）发起 ADD +1。ADD 是服务端（PE 0 KV 表）原子操作，天然无竞态——谁先谁后都行，这正是"报到"的正确姿势。',
+  f:'GroupBarrier · 伪代码',code:'ADD  SHM_(0)_S_{组号}_{轮次}_BA  1   → 返回累加后的值\n<span class="cm">// 键名带轮次 sn：每轮新键，历史残留值不可能误触发</span>',
+  refs:['src/host/bootstrap/config_store/（SmemNetGroupEngine）']},
+ {t:'② 最后一个到达者触发',
+  d:'每个 PE 拿到 ADD 的返回值。返回值 == rankSize 的那个 PE 知道"人到齐了"，由它负责关门——其他人继续轮询等待。',
+  f:'判定条件',code:'val = ADD(_BA, 1);\n<span class="kw">if</span> (val == rankSize) {   <span class="cm">// 我是最后一个</span>\n    SET(_BW, <span class="st">"ok"</span>);   <span class="cm">// 去关门</span>\n}'},
+ {t:'③ SET 完成标志 _BW',
+  d:'最后一个 PE 写入 <b>_BW</b>（barrier wait）= ok。这是一个普通的 SET 写——因为只有一个人写，不需要原子性。',
+  f:'键空间',code:'SHM_(0)_S_1_2_BA : 4     <span class="cm">// 第 1 组第 2 轮 · 到达计数</span>\nSHM_(0)_S_1_2_BW : ok    <span class="cm">// 完成标志</span>'},
+ {t:'④ 全员 GET 轮询直到 ok',
+  d:'其余 PE 用 <b>GET 阻塞读</b>（超时 = 帧头 userDef 毫秒数，来自 control_operation_timeout）轮询 _BW，读到 ok 即通过 barrier。每超过 2 轮清理一次旧键。',
+  f:'收尾',code:'GET  SHM_(0)_S_1_2_BW  timeout_ms\n<span class="cm">// → "ok" 通过；超时报 ACLSHMEM_TIMEOUT_ERROR</span>',
+  refs:['docs/principles/config_store_bootstrap.md §九']}
+]);
+
+/* ========== 5. init 步骤 ========== */
+bindStepper('#initSteps','initDetail',[
+ {t:'1 · instance 上下文（多实例）',
+  d:'同一进程可创建多套 SHMEM 上下文（instance_id，默认 0）。多实例间共享 init_manager、HYBM 全局初始化与 Config Store（引用计数，最后一个 finalize 才真正释放）。device 侧用 g_instance_addr 区分（每 instance 64K 上下文，MULTI_INSTANCE 宏）。',
+  f:'接口',code:'aclshmemx_instance_ctx_get();\naclshmemx_instance_ctx_set(instance_id);  <span class="cm">// 切换当前活动实例</span>',
+  refs:['src/host/init/shmem_init.cpp','docs/multi_instance.md']},
+ {t:'2 · 参数校验与版本兼容',
+  d:'check_attr 校验 my_pe / n_pes / heap_size / local_mem_size；跨节点做<b>版本一致性</b>检查（不同版本的库混组网会直接失败——v1.6 起重点检查项）。local_mem_size 各 PE 可不同，但不对称会告警。',
+  f:'典型合法参数',code:'my_pe = 0..n_pes-1\nheap_size = 512MB..N GB（2MB 对齐）\nlocal_mem_size ≥ ACLSHMEM_SIGNAL_SIZE(512B) + ACLSHMEM_EXTRA_SIZE'},
+ {t:'3 · Bootstrap 建链（控制面）',
+  d:'按 init flags 选择插件：UNIQUEID / DEFAULT → dlopen aclshmem_bootstrap_config_store.so；MPI → bootstrap_mpi（用 MPI_Comm 做控制面）。随后 PE 0 起 listener、全员 connect、握手（magic/version/rankId 校验）。此步完成后，rank 间有了 barrier/allgather 能力（第 4 章）。',
+  f:'三模式',code:'aclshmemx_init_attr(ACLSHMEMX_INIT_WITH_UNIQUEID, &amp;attr);  <span class="cm">// UID 广播</span>\naclshmemx_init_attr(ACLSHMEMX_INIT_WITH_DEFAULT,   &amp;attr);  <span class="cm">// tcp://ip:port</span>\naclshmemx_init_attr(ACLSHMEMX_INIT_WITH_MPI,       &amp;attr);  <span class="cm">// MPI_Comm*</span>',
+  refs:['src/host/bootstrap/','docs/principles/config_store_bootstrap.md']},
+ {t:'4 · state 初始化',
+  d:'Host 侧 g_state 落位：mype / npes / heap_size；创建 ACL runtime（default_stream、event）；记录 default_block_num。这一份 state 稍后会<b>镜像到 NPU 元数据区</b>供算子读取。',
+  f:'关键字段',code:'g_state-&gt;mype / npes / heap_size\ng_state-&gt;default_stream  <span class="cm">// 异步任务调度流</span>\ng_state-&gt;notify_arr[]    <span class="cm">// 每 AIV 的通知槽</span>'},
+ {t:'5 · init_backend（平台后端）',
+  d:'引用计数式初始化平台相关后端：读取 FFTS 配置（A2/A3）、准备 SDMA workspace / RDMA 资源等。950 上则跳过 FFTS。同进程多实例只执行一次。',
+  refs:['src/host/init/backends/shmem_init_backend.cpp']},
+ {t:'6 · 建堆（最核心的一步）',
+  d:'reserve_heap 在 GVM（20T–24T）预留虚拟地址；setup_heap：分配本地 slice → <b>exchange_slice</b>（控制面 allgather 交换全部 PE 的内存描述符）→ hybm_import + mmap 把远端 slice 映射进本地 → 填 p2p / rdma / sdma 三套 heap_base 数组。从此 aclshmem_ptr 可用。',
+  f:'窗口布局',code:'heap_base = hbm_gva + ALIGN_UP(heap_size, 1G) * my_pe\n<span class="cm">// 每个 PE 在 GVM 里占一个 1G 对齐窗口，顺序排布</span>\n<span class="cm">// 三张基址表：</span>\np2p_device_heap_base[pe]   <span class="cm">// MTE（HCCS 直达）</span>\nrdma_device_heap_base[pe]  <span class="cm">// RDMA（rkey 配套）</span>\nsdma_device_heap_base[pe]  <span class="cm">// SDMA</span>',
+  refs:['src/host/entity/','docs/principles/init_finalize.md §3.4']},
+ {t:'7 · 子模块就绪',
+  d:'堆分配器（first-fit + 每次分配后控制面 barrier 对齐）、signal 区（堆头 512B）、team 池（2048 个 + pe_mapping）、同步池（SYNC_ARRAY_SIZE×teams，cacheline 切槽）、平台同步（A2/A3 FFTS）依次就绪。',
+  f:'EXTRA 区布局（堆尾，2M 对齐）',code:'[signal 512B][sync 5MB：2048 team × SYNC_ARRAY_SIZE][team 1MB：2048 × 512B]\n<span class="cm">// 每个同步槽 64B 对齐 —— cacheline 独占，防伪共享丢信号</span>'},
+ {t:'8 · 收尾：镜像 + 全员对齐',
+  d:'update_device_state 把 Host state 拷到 NPU 固定 VA 元数据区（device 侧 aclshmemi_get_state() 读的就是它）；随后 aclshmemi_control_barrier_all 让所有 PE 在同一初始化进度上会合；is_initialized = true。此后才能调用 malloc / RMA / team。',
+  f:'device 侧读取（零参数）',code:'__gm__ aclshmem_device_host_state_t *st = aclshmemi_get_state();\n<span class="cm">// 固定 VA：SMEM_SHM_DEVICE_USER_CONTEXT_ADDR + shmemId*64K</span>\nst-&gt;mype; st-&gt;npes; st-&gt;p2p_device_heap_base[pe]; st-&gt;topo_list[pe];',
+  refs:['src/device/shmemi_device_meta.h','src/device/shmemi_device_common.hpp']}
+]);
+
+/* ========== 3.1 地址换算器 ========== */
+$('calcBtn').addEventListener('click',()=>{
+  const pe=+$('calcPe').value, gb=+$('calcHeap').value;
+  let off; try{ off=BigInt($('calcOff').value.trim()); }catch(e){
+    $('calcOut').innerHTML='<span style="color:#e11d48">⚠ 偏移格式错误：请用 0x 开头的十六进制（如 0x1000）</span>'; return; }
+  const stride=BigInt(gb)*1024n*1024n*1024n;
+  const base0=0x140000000000n, basePe=base0+BigInt(pe)*stride;
+  const local=base0+off, remote=basePe+off;
+  const hx=v=>'0x'+v.toString(16).toUpperCase();
+  const ok=off>=0n && off<stride;
+  $('calcOut').innerHTML=
+   'heap_size = '+gb+' GB（stride = ALIGN_UP(heap,1G) = '+hx(stride)+'）<br>'+
+   '本 PE(0) 对称地址 ptr &nbsp;= '+hx(base0)+' + '+hx(off)+' = <b>'+hx(local)+'</b><br>'+
+   'offset = ptr − heap_base(0) = <b>'+hx(off)+'</b><br>'+
+   'PE '+pe+' 的 heap_base &nbsp;&nbsp;&nbsp;= '+hx(base0)+' + '+pe+'×'+hx(stride)+' = '+hx(basePe)+'<br>'+
+   'remote_ptr = heap_base['+pe+'] + offset = <b style="color:#e11d48">'+hx(remote)+'</b> ← 交给引擎的目标地址<br>'+
+   (ok?'<span style="color:#16a34a">✓ 偏移在堆范围内（&lt; '+hx(stride)+'）</span>'
+      :'<span style="color:#e11d48">⚠ 偏移超出堆范围！对端该地址无效</span>');
+});
+
+/* ========== 6. MTE 流水动画 ========== */
+(function(){
+  let playing=false, t0=null, raf=null;
+  const pkt=$('mtePkt');
+  function frame(ts){
+    if(!playing)return;
+    if(t0===null)t0=ts;
+    const T=4600, t=((ts-t0)%T)/T;
+    const p1=$('mteP1'),p2=$('mteP2'),f1=$('mteFlag1'),f2=$('mteFlag2');
+    if(typeof p1.getTotalLength!=='function'||typeof p1.getPointAtLength!=='function'){
+      /* 无 SVG 几何 API 的环境：降级为 flag 闪烁 */
+      const on=(t%0.5)<0.25;
+      f1.setAttribute('opacity',on?1:.25); f2.setAttribute('opacity',on?1:.25);
+      pkt.setAttribute('opacity',0);
+      raf=requestAnimationFrame(frame); return;
+    }
+    const L1=p1.getTotalLength(),L2=p2.getTotalLength();
+    let pt=null;
+    if(t<0.38){ pt=p1.getPointAtLength(L1*(t/0.38)); f1.setAttribute('opacity',.25); f2.setAttribute('opacity',.25); }
+    else if(t<0.52){ pt=p1.getPointAtLength(L1); f1.setAttribute('opacity',1); f2.setAttribute('opacity',1); }
+    else if(t<0.90){ const u=(t-0.52)/0.38; pt=p2.getPointAtLength(L2*u); f1.setAttribute('opacity',t<0.58?1:.25); f2.setAttribute('opacity',.25); }
+    else { pt=p2.getPointAtLength(L2); f2.setAttribute('opacity',1); f1.setAttribute('opacity',.25); }
+    if(pt){ pkt.setAttribute('cx',pt.x); pkt.setAttribute('cy',pt.y); pkt.setAttribute('opacity',1); }
+    raf=requestAnimationFrame(frame);
+  }
+  $('mtePlay').addEventListener('click',()=>{
+    playing=!playing;
+    $('mtePlay').textContent=playing?'⏸ 暂停':'▶ 播放流水';
+    if(playing){ t0=null; raf=requestAnimationFrame(frame); }
+    else{ cancelAnimationFrame(raf); pkt.setAttribute('opacity',0);
+          $('mteFlag1').setAttribute('opacity',.25); $('mteFlag2').setAttribute('opacity',.25); }
+  });
+})();
+
+/* ========== 7.2 barrier 动画 ========== */
+(function(){
+  const svg=$('barSvg'), NS='http://www.w3.org/2000/svg';
+  const CX=340, CY=200, R=140;
+  const st={round:0,sig:0,playing:false,timers:[]};
+  function pos(i,n){const a=-Math.PI/2+i*2*Math.PI/n;return[CX+R*Math.cos(a),CY+R*Math.sin(a)];}
+  function el(n,at){const e=document.createElementNS(NS,n);for(const k in at){const v=at[k];if((k==='fill'||k==='stroke')&&typeof v==='string'&&v.indexOf('var(')===0){e.style[k]=v;}else{e.setAttribute(k,v);}}return e;}
+  function status(s){$('barStatus').innerHTML=s;}
+  function render(){
+    const n=+$('barN').value;
+    while(svg.firstChild)svg.removeChild(svg.firstChild);
+    const c1=el('text',{x:CX,y:CY-4,'text-anchor':'middle','font-size':'12',fill:'var(--muted)'});
+    c1.textContent='team 同步池（sync_pool）'; svg.appendChild(c1);
+    const c2=el('text',{x:CX,y:CY+14,'text-anchor':'middle','font-size':'10',fill:'var(--muted)'});
+    c2.textContent='每槽 64B · 独占 cacheline'; svg.appendChild(c2);
+    for(let i=0;i<n;i++){
+      const [x,y]=pos(i,n);
+      svg.appendChild(el('circle',{cx:x,cy:y,r:20,fill:'var(--card)',stroke:'#94a3b8','stroke-width':1.6,id:'bnc'+i}));
+      const t=el('text',{x:x,y:y+4,'text-anchor':'middle','font-size':'11.5','font-weight':700,fill:'var(--ink)'});
+      t.textContent='PE'+i; svg.appendChild(t);
+    }
+  }
+  function arrow(i,j,color,dashed){
+    const n=+$('barN').value;
+    const [x1,y1]=pos(i,n),[x2,y2]=pos(j,n);
+    let mx=(x1+x2)/2-CX, my=(y1+y2)/2-CY;
+    const l=Math.hypot(mx,my)||1;
+    const cx=CX+mx/l*(R+52), cy=CY+my/l*(R+52);
+    const p=el('path',{d:'M'+x1+' '+y1+' Q '+cx+' '+cy+' '+x2+' '+y2,fill:'none',stroke:color,'stroke-width':2,opacity:.92});
+    if(dashed)p.setAttribute('stroke-dasharray','6 4');
+    p.classList.add('barArrow');
+    svg.appendChild(p);
+    return p;
+  }
+  function fadeArrows(){svg.querySelectorAll('.barArrow').forEach(a=>a.classList.add('faded'));}
+  function node(i,fill,stroke){const c=$('bnc'+i); if(c){c.setAttribute('fill',fill);c.setAttribute('stroke',stroke);}}
+  function finish(msg){
+    const n=+$('barN').value;
+    for(let i=0;i<n;i++)node(i,'#dcfce7','#16a34a');
+    st.playing=false; $('barPlay').textContent='▶ 播放';
+    status('✅ <b>'+msg+'</b>');
+  }
+  function runV3(){
+    const n=+$('barN').value;
+    status('阶段①：各 PE 写<b>自己的槽</b>（本地写，0 远程写）…');
+    for(let i=0;i<n;i++){
+      st.timers.push(setTimeout(()=>node(i,'#fef3e2','#d97706'),i*130));
+    }
+    st.timers.push(setTimeout(()=>{
+      status('阶段②：root（PE0）<b>轮询拉取</b>其余 '+(n-1)+' 个远端槽…');
+      for(let i=1;i<n;i++){
+        const j=i;
+        st.timers.push(setTimeout(()=>{
+          const p=arrow(0,j,'#2563eb',true);
+          p.style.opacity=0; p.style.transition='opacity .4s';
+          requestAnimationFrame(()=>p.style.opacity=.92);
+          node(j,'#dbeafe','#2563eb');
+        },(i-1)*150));
+      }
+      st.sig+=n-1;
+      st.timers.push(setTimeout(()=>finish('v3 完成：'+(n-1)+' 次远端读 + '+(n-1)+' 次本地写 · O(N) 复杂度'),
+        (n-1)*150+600));
+    },n*130+450));
+  }
+  function runRound(){
+    const n=+$('barN').value;
+    if($('barAlgo').value==='v3'){ runV3(); return; }
+    const rounds=Math.round(Math.log2(n));
+    if(st.round>=rounds){ finish('v1 完成：共 '+st.sig+' 个信号 · '+rounds+' 轮（log₂'+n+'）· 每轮每人恰收发 1 次'); return; }
+    const shift=1<<st.round;
+    status('第 <b>'+(st.round+1)+'/'+rounds+'</b> 轮 · 步长 <b>'+shift+'</b>：每个 PE 向"下游 '+shift+' 跳"的邻居发信号…');
+    for(let i=0;i<n;i++){
+      const p=arrow(i,(i+shift)%n,'#e11d48',false);
+      if(typeof p.getTotalLength==='function'){
+        const L=p.getTotalLength();
+        p.style.strokeDasharray=L; p.style.strokeDashoffset=L;
+        st.timers.push(setTimeout(()=>{
+          p.style.transition='stroke-dashoffset .45s ease';
+          p.style.strokeDashoffset=0;
+        },i*110));
+      }
+    }
+    st.sig+=n;
+    st.timers.push(setTimeout(()=>{
+      fadeArrows();
+      st.round++;
+      for(let i=0;i<n;i++) node(i,'#fde8e8','#e11d48');
+      if(st.playing) runRound();
+      else status('第 '+st.round+'/'+rounds+' 轮完成（累计 '+st.sig+' 信号）。点"单步"继续，或"播放"自动跑完。');
+    },n*110+680));
+  }
+  function reset(){
+    st.timers.forEach(clearTimeout); st.timers=[];
+    st.round=0; st.sig=0; st.playing=false;
+    $('barPlay').textContent='▶ 播放';
+    render(); status('已重置。选择算法与 PE 数后点"播放"。');
+  }
+  $('barPlay').addEventListener('click',()=>{
+    if(st.playing)return;
+    reset(); st.playing=true; runRound();
+  });
+  $('barStep').addEventListener('click',()=>{
+    if(st.playing)return;
+    if($('barAlgo').value==='v3'){ reset(); runV3(); return; }
+    runRound();
+  });
+  $('barReset').addEventListener('click',reset);
+  $('barAlgo').addEventListener('change',reset);
+  $('barN').addEventListener('change',reset);
+  render();
+})();
+
+/* ========== 8.1 选路模拟器 ========== */
+(function(){
+  function bitStr(b){return ['MTE','ROCE','SDMA','UDMA'].map((n,i)=>b&(1<<i)?n:null).filter(Boolean).join('|')||'0';}
+  function chip(name){const cls={MTE:'mte',SDMA:'sdma',RDMA:'rdma',UDMA:'udma'}[name.split(' ')[0]]||'';return '<span class="chip '+cls+'"><b>'+name+'</b></span>';}
+  function calc(){
+    const plat=$('rwPlat').value, peer=$('rwPeer').value;
+    const en={MTE:$('rwMte').checked,SDMA:$('rwSdma').checked,RDMA:$('rwRdma').checked,UDMA:$('rwUdma').checked};
+    let bits=0, engine='', why='', extra='';
+    if(peer==='host'){
+      bits=1; engine='MTE';
+      why='Host 内存属于 D2H/H2D 通路：MTE 直驱（经 Host 连接映射区，48T 起的 16T 窗口）。';
+      if(plat==='910'&&en.SDMA)extra='A3 上也可用 SDMA 把 H2D/D2H 卸载出 AICore。';
+    }else if(peer==='same'){
+      if(plat==='910'){
+        bits=1|(en.SDMA?4:0);
+        engine=en.MTE?'MTE':'SDMA';
+        why='同节点 NPU 经 <b>HCCS</b> 全互联直连：MTE 换算地址后直接 load/store 对端 GM，延迟最低。';
+        if(en.SDMA)extra='SDMA 位同时置位：大块搬运可改走 STARS 队列，与计算重叠。';
+        if(!en.MTE&&en.SDMA)why='MTE 未启用 → 退选 SDMA（STARS 队列搬运）。';
+      }else{
+        bits=8; engine='UDMA';
+        why='950 同节点走 <b>UB 灵衢总线</b>（层级0 MESH / 层级1 CLOS）：UDMA 用 EID + jetty + token 寻址。';
+        extra='WRITE_WITH_NOTIFY / WRITE_WITH_REDUCE 等融合语义只有这条通路提供。';
+      }
+    }else if(peer==='cross'){
+      if(plat==='910'){
+        bits=2; engine='RDMA';
+        why='跨节点仅有 RoCE 网络可达：构造 WQE（remote VA + rkey）→ SQ → doorbell → 网卡直写对端 MR。';
+      }else{
+        bits=(en.RDMA?2:0)|(en.UDMA?8:0);
+        engine=en.RDMA?'RDMA（RoCE）':'UDMA（UBOE）';
+        if(en.RDMA&&en.UDMA)engine='RDMA 或 UDMA';
+        why='950 层级2（scale-out）：RoCE 与 UBOE 都可能可达，具体由 rootinfo 拓扑发现结果决定。';
+        extra='跨机注意：同一 PE 的默认路径 RDMA 并发受限——需要并发时用低阶接口按核分配 qp_idx，或 XSCALE 聚合批。';
+      }
+    }else{
+      bits=8; engine='UDMA relay';
+      why='CLOS 组网下与对端<b>非直连</b>：UDMA 借中继 PE 的端口 EID 转发（relay_pe 参数）。';
+      extra='slot = pe*rank_count + relay_pe；需编译宏 ACLSHMEM_RELAY_SUPPORT。';
+    }
+    const disabled=(engine.includes('MTE')&&!en.MTE)||(engine.includes('SDMA')&&!en.SDMA)||(engine.includes('RDMA')&&!en.RDMA)||(engine.includes('UDMA')&&!en.UDMA);
+    $('rwOut').innerHTML=
+      '<div class="big">选择引擎：'+chip(engine)+'</div>'+
+      '<div style="margin-top:6px">'+why+(extra?'<br><span class="small">'+extra+'</span>':'')+'</div>'+
+      '<div class="codeblock" style="margin-top:10px"><div class="hd"><span class="file">运行期判定（高阶接口内部）</span></div>'+
+      '<pre>uint8_t topo = device_state-&gt;topo_list[pe];  <span class="cm">// '+bitStr(bits)+' (0b'+bits.toString(2).padStart(4,'0')+')</span>\n'+
+      '<span class="kw">if</span> (topo &amp; ACLSHMEM_TRANSPORT_MTE)  { <span class="cm">/* MTE 路径 */</span> }\n'+
+      '<span class="kw">if</span> (topo &amp; ACLSHMEM_TRANSPORT_ROCE) { <span class="cm">/* RDMA 路径 */</span> }\n'+
+      '<span class="kw">if</span> (topo &amp; ACLSHMEM_TRANSPORT_UDMA) { <span class="cm">/* UDMA 路径 */</span> }</pre></div>'+
+      (disabled?'<div style="margin-top:8px;color:#e11d48">⚠ 所选引擎在 init 中未启用（dataOpType 掩码），实际会被剔除——请勾选对应引擎。</div>':'');
+  }
+  $('rwBtn').addEventListener('click',calc);
+  calc();
+})();
+
+/* ========== 9. put 旅程 ========== */
+(function(){
+  const steps=[
+   {t:'① 应用调用（Host）',
+    d:'业务代码调用 Host 侧高阶 RMA。<b>dst 必须是对称地址</b>（会被翻译到对端），src 是本地任意 GM 地址。阻塞版本返回即代表完成（内部已做 quiet）。',
+    f:'include/host/data_plane/shmem_host_rma.h',code:'aclshmem_putmem(dst, src, nelems, pe);       <span class="cm">// 字节流</span>\naclshmem_float_put(dst, src, nelems, pe);     <span class="cm">// 类型化</span>\naclshmemx_put_nbi_on_stream(dst, src, n, pe, strm); <span class="cm">// 非阻塞（需 quiet）</span>'},
+   {t:'② kernel 下发（Host → NPU）',
+    d:'Host 接口本质是<b>把通信 kernel 发到 ACL stream</b>：内部走 aclshmemi_prepare_and_post_rma → kernel launch。block_dim 可指定并行度，stream 为空则用默认流。',
+    f:'src/device/gm2gm/shmemi_device_rma.cpp',code:'aclshmemi_prepare_and_post_rma_uint8(api, dst, src, n, pe, acl_strm, block_size);\n  └─ aclshmemi_uint8_put&lt;&lt;&lt;block_size, 0, acl_strm&gt;&gt;&gt;(dst, src, n, pe);'},
+   {t:'③ 地址换算（AICore 内）',
+    d:'kernel 里第一步就是对称地址翻译：回到堆内偏移，再换到目标 PE 的基址。Host 堆地址有 debug 校验（assert_remote_ptr_valid）。整个过程是几次整数运算，纳秒级。',
+    f:'src/device/gm2gm/engine/shmem_device_mte.hpp',code:'ptrdiff_t offset = (uintptr_t)ptr - (uintptr_t)st-&gt;heap_base;\nuintptr_t remote  = (uintptr_t)st-&gt;p2p_device_heap_base[pe] + offset;'},
+   {t:'④ 查表选引擎',
+    d:'读 device_state-&gt;topo_list[pe] 的引擎位图（MTE=1 / ROCE=2 / SDMA=4 / UDMA=8），结合 init 时启用的 dataOpType。高阶接口按位分发到对应低阶实现——这就是"一次编写、全通路自适应"。',
+    f:'include/host_device/shmem_common_types.h',code:'enum data_op_engine_type_t {\n  ACLSHMEM_DATA_OP_MTE  = 0x01,\n  ACLSHMEM_DATA_OP_SDMA = 0x02,\n  ACLSHMEM_DATA_OP_ROCE = 0x04,\n  ACLSHMEM_DATA_OP_UDMA = 0x08,\n};'},
+   {t:'⑤ 引擎执行（真正搬数据）',
+    d:'按选中的引擎走各自提交路径：<b>MTE</b>＝UB 流水乒乓；<b>SDMA</b>＝填 SQE 敲铃；<b>RDMA</b>＝构造 WQE→SQ→doorbell；<b>UDMA</b>＝SQE 带 EID/token 提交。大块数据在引擎内部还会切片。',
+    f:'（各引擎详见第 6 章）',code:'<span class="cm">// RDMA 示例：WQE 关键字段</span>\nwr.remote_addr = remote;        <span class="cm">// ③ 换算的对端地址</span>\nwr.rkey = remote_mem_info-&gt;rkey; <span class="cm">// 对端 MR 键</span>\nwr.message_len = n;\naclshmemi_roce_post_send&lt;B, OP_RDMA_WRITE&gt;(wr, pe, qp_idx, ...);'},
+   {t:'⑥ 完成与保序',
+    d:'阻塞接口自动收尾；nbi 接口把这一步交给用户。quiet 三段式：排空流水 → 按对端 quiet（ROCE/UDMA）/按队列 quiet（SDMA）→ dcci_entire_cache 刷缓存。',
+    f:'src/device/gm2gm/shmem_device_mo.hpp',code:'PipeBarrier&lt;PIPE_ALL&gt;();\n<span class="kw">for</span> (pe : 0..npes) {\n  <span class="kw">if</span> (topo_list[pe] &amp; ROCE) aclshmemx_roce_quiet(pe, ub, sync_id);\n  <span class="kw">if</span> (topo_list[pe] &amp; UDMA) aclshmemx_udma_quiet(pe);\n}\ndcci_entire_cache();   <span class="cm">// 标量 cache → GM</span>'},
+   {t:'⑦ 对端可见与同步',
+    d:'数据落盘后，用 signal 通知对端（点对点）或 barrier（集合）对齐。UDMA 的 WRITE_WITH_NOTIFY 能把"搬运+置信号"合并为一次硬件操作；put_with_signal 则是跨引擎通用形态。',
+    f:'src/device/gm2gm/shmemi_device_p2p_sync.h',code:'<span class="cm">// 本端：</span>\naclshmemx_signal_op(sig_addr, 1, ACLSHMEM_SIGNAL_SET, pe);\n<span class="cm">// 对端（自旋 + volatile 读，槽位 cacheline 独占）：</span>\naclshmem_int_wait_until(sig_addr, ACLSHMEM_CMP_EQ, 1);'}
+  ];
+  const nodes=[...document.querySelectorAll('#journeySvg .jnode')];
+  function show(i){
+    const d=steps[i];
+    nodes.forEach(g=>{
+      const r=g.querySelector('rect');
+      const on=+g.dataset.step===i;
+      r.style.stroke=on?'#2563eb':'var(--edge)';
+      r.style.strokeWidth=on?2.6:1.3;
+      r.style.fill=on?'#dbeafe':'var(--card)';
+    });
+    $('jDetail').innerHTML='<h4>'+d.t+'</h4><p class="desc">'+d.d+'</p>'+
+      '<div class="codeblock"><div class="hd"><span class="file">'+d.f+'</span></div><pre>'+d.code+'</pre></div>';
+  }
+  nodes.forEach(g=>g.addEventListener('click',()=>{stop();show(+g.dataset.step);}));
+  let timer=null;
+  function stop(){ if(timer){clearInterval(timer);timer=null;} $('jPlay').textContent='▶ 自动播放'; }
+  $('jPlay').addEventListener('click',()=>{
+    if(timer){stop();return;}
+    let i=0; show(i);
+    timer=setInterval(()=>{ i=(i+1)%steps.length; show(i); },2600);
+    $('jPlay').textContent='⏸ 暂停';
+  });
+  $('jStop').addEventListener('click',()=>{stop();});
+  show(0);
+})();
+
+/* ========== 12. 术语过滤 ========== */
+(function(){
+  const rows=[...document.querySelectorAll('#glosTable tbody tr')];
+  const upd=()=>{
+    const q=$('glosFilter').value.trim().toLowerCase();
+    let n=0;
+    rows.forEach(r=>{
+      const hit=!q||r.textContent.toLowerCase().includes(q);
+      r.style.display=hit?'':'none'; if(hit)n++;
+    });
+    $('glosCount').textContent='共 '+n+' / '+rows.length+' 条';
+  };
+  $('glosFilter').addEventListener('input',upd);
+  upd();
+})();
+</script>
+</body>
+</html>
