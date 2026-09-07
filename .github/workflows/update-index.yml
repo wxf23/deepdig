@@ -31,7 +31,7 @@ jobs:
           '''
           for f in files:
               name = f.replace('.html', '')
-              html_content += f'  <li><a href=\"./{f}\">{name}</a></li>\n'
+              html_content += f'  <li><a href=\"./docs/{f}\">{name}</a></li>\n'
 
           html_content += '''</ul>
           </body>
