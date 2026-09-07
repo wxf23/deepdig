@@ -1,0 +1,51 @@
+name: 自动生成 HTML 索引主页
+
+on:
+  push:
+    branches: [ main ] # 监测 main 分支的提交
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 扫描并生成 index.html
+        run: |
+          python3 -c "
+          import os
+
+          # 查找所有以 .html 结尾且不是 index.html 的文件
+          files = [f for f in os.listdir('docs') if f.endswith('.html') and f.lower() != 'index.html']
+          files.sort()
+
+          html_content = '''<!DOCTYPE html>
+          <html>
+          <head><meta charset=\"UTF-8\"><title>页面目录</title></head>
+          <body style=\"font-family:sans-serif; max-width:600px; margin:40px auto;\">
+          <h2>自动生成的页面列表</h2>
+          <ul>
+          '''
+          for f in files:
+              name = f.replace('.html', '')
+              html_content += f'  <li><a href=\"./{f}\">{name}</a></li>\n'
+
+          html_content += '''</ul>
+          </body>
+          </html>
+          '''
+
+          with open('index.html', 'w', encoding='utf-8') as out:
+              out.write(html_content)
+          "
+
+      - name: 自动提交更新后的 index.html
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Auto-generate index.html [skip ci]" || exit 0
+          git push
