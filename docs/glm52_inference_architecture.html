@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>GLM-5.2 推理架构图 (blockrt Megakernel / AscendC W4A8)</title>
+<style>
+  :root{
+    --cube:#6D4FC4; --cube-bg:#EDE7FF;
+    --vec:#2B6CB8;  --vec-bg:#E3F0FD;
+    --mix:#C46A12;  --mix-bg:#FDEBD7;
+    --comm:#1E7E45; --comm-bg:#E1F3E8;
+    --mem:#5B6470;  --mem-bg:#EEF0F3;
+    --flow:#0F766E; --flow-bg:#DCF2F0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;background:#F5F6F8;color:#1F2430}
+  header{background:#fff;border-bottom:1px solid #E3E6EA;padding:14px 24px}
+  header h1{margin:0 0 4px;font-size:20px}
+  header .sub{font-size:12px;color:#5B6470}
+  .summary{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .cfg{background:#F1F2F5;border:1px solid #E3E6EA;border-radius:6px;padding:4px 10px;font-size:12px}
+  .cfg b{color:#0F766E}
+  .controls{display:flex;gap:12px;align-items:center;padding:10px 24px;background:#fff;border-bottom:1px solid #E3E6EA;flex-wrap:wrap}
+  .controls label{font-size:12px;color:#5B6470}
+  .controls select{padding:3px 8px;border:1px solid #D0D4DA;border-radius:6px;font-size:13px}
+  .filter{display:flex;gap:6px}
+  .filter button{border:1px solid #D0D4DA;background:#fff;border-radius:14px;padding:3px 12px;font-size:12px;cursor:pointer}
+  .main{display:flex;gap:0;align-items:flex-start}
+  #svgwrap{flex:1;overflow:auto;padding:8px;min-width:0}
+  #panel{width:440px;flex:none;position:sticky;top:0;max-height:100vh;overflow:auto;background:#fff;border-left:1px solid #E3E6EA;padding:16px 18px 40px}
+  #panel h2{margin:0 0 2px;font-size:17px}
+  #panel .ktag{display:inline-block;font-size:11px;border-radius:4px;padding:1px 8px;margin:2px 6px 10px 0;color:#fff}
+  #panel h3{font-size:12px;color:#8A93A0;letter-spacing:.06em;margin:14px 0 4px;border-top:1px solid #EEF0F3;padding-top:10px}
+  #panel table{width:100%;border-collapse:collapse;font-size:12px}
+  #panel th{text-align:left;color:#8A93A0;font-weight:500;padding:3px 6px 3px 0;vertical-align:top;white-space:nowrap}
+  #panel td{padding:3px 0;vertical-align:top}
+  #panel td.mono, .mono{font-family:"SF Mono",Consolas,monospace;font-size:11.5px}
+  #panel p{font-size:13px;line-height:1.65;margin:4px 0}
+  #panel .hint{font-size:12px;color:#8A93A0}
+  #panel .vol{color:#0F766E;font-weight:600;white-space:nowrap}
+  svg text{user-select:none;pointer-events:none}
+  svg polyline{pointer-events:none}
+  .opnode{cursor:pointer}
+  .opnode rect{transition:stroke-width .08s}
+  .edgelabel{font-size:10px;fill:#8A93A0}
+  .sectitle{font-size:14px;font-weight:700;fill:#3B414D}
+  .secnote{font-size:11px;fill:#8A93A0}
+  .searchbox{position:relative}
+  #opsearch{padding:4px 10px;border:1px solid #D0D4DA;border-radius:6px;font-size:13px;width:220px;outline:none}
+  #opsearch:focus{border-color:#0F766E}
+  #searchdrop{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #D0D4DA;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.12);display:none;z-index:50;max-height:300px;overflow:auto}
+  #searchdrop div{padding:6px 10px;font-size:12px;cursor:pointer;display:flex;justify-content:space-between;gap:10px}
+  #searchdrop div:hover,#searchdrop div.act{background:#E3F0FD}
+  #searchdrop .sk{color:#8A93A0;font-size:10px;white-space:nowrap}
+  .ctlbtn{border:1px solid #D0D4DA;background:#fff;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
+  .ctlbtn:hover{border-color:#0F766E;color:#0F766E}
+  .navrow{display:flex;gap:6px;margin:0 0 12px}
+  .navrow button{flex:1;border:1px solid #D0D4DA;background:#fff;border-radius:6px;padding:4px 0;font-size:12px;cursor:pointer}
+  .navrow button:hover{border-color:#0F766E;color:#0F766E}
+  .formula{background:#F6F8FA;border:1px solid #E3E6EA;border-left:3px solid #0F766E;border-radius:6px;padding:8px 12px;font-size:12.5px;line-height:1.9;margin:6px 0}
+  .formula .mono{font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>GLM-5.2 (GlmMoeDsaForCausalLM) 推理架构 — blockrt Megakernel · AscendC W4A8/MXFP8</h1>
+  <div class="sub">依据 python/blockrt/models/glm_5_2/* 与 python/blockrt/ops/ascendc/* 源码绘制 · 入口 examples/models/glm_5_2/test_forward.py · 点击任意算子查看详细说明</div>
+  <div class="summary">
+    <span class="cfg">hidden <b>H=6144</b></span>
+    <span class="cfg">层数 <b>10</b>(本仓测试配置): L0–L2 Dense, L3–L9 MoE (<b>first_k_dense_replace=3</b>)</span>
+    <span class="cfg">MLA: <b>64 头</b>, q_lora <b>2048</b>, kv_lora <b>512</b>, nope <b>192</b>, rope <b>64</b>, v_head <b>256</b></span>
+    <span class="cfg">DSA Indexer: <b>32 头×128</b>, top-<b>2048</b>, 每 <b>4</b> 层重算</span>
+    <span class="cfg">MoE: <b>256</b> 路由专家 + <b>1</b> 共享专家, top-<b>8</b>, expert_ffn <b>2048</b>, sigmoid/noaux_tc, scale 2.5</span>
+    <span class="cfg">量化: <b>W4A8 MX</b> (FP4 权重 E2M1 + E8M0 块 scale / FP8 E4M3 激活, 块=32)</span>
+    <span class="cfg">vocab <b>154880</b>, dense_ffn <b>12288</b>, rms_eps 1e-5</span>
+  </div>
+</header>
+<div class="controls">
+  <label>Token 数 M
+    <select id="msel"><option>8</option><option>64</option><option>512</option><option>4096</option></select>
+  </label>
+  <label>TP 度
+    <select id="tpsel"><option>1</option><option>2</option></select>
+  </label>
+  <label>SoC (UB 容量)
+    <select id="socsel"><option value="ascend910b">ascend910b · 192 KiB</option><option value="ascend950">ascend950 · 248 KiB</option></select>
+  </label>
+  <span class="hint">切换后右侧详情面板中的形状与数据量即时重算(图中标注固定为 M=8, TP=1 示例)</span>
+  <span style="flex:1"></span>
+  <div class="searchbox">
+    <input id="opsearch" type="text" placeholder="搜索算子 / kernel… (Ctrl+K)" autocomplete="off">
+    <div id="searchdrop"></div>
+  </div>
+  <div class="filter" id="filter"></div>
+</div>
+<div class="main">
+  <div id="svgwrap">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+  <div id="panel">
+    <h2>GLM-5.2 推理数据流</h2>
+    <span class="ktag" style="background:var(--cube)">CUBE 矩阵乘</span>
+    <span class="ktag" style="background:var(--vec)">VEC 向量/归约</span>
+    <span class="ktag" style="background:var(--mix)">MIX Cube+Vec 融合</span>
+    <span class="ktag" style="background:var(--comm)">COMM 通信</span>
+    <span class="ktag" style="background:var(--mem)">MEM Cache/Buffer</span>
+    <p>点击图中算子查看: <b>输入输出参数 · 数据量 · 内存布局 · 依赖关系 · Tiling · 性能</b>。<br>
+    融合内核经 blockrt DAG 捕获为 OpNode(携带预编译 KernelBundle),由 blade builder Session 编排为 TileGraph 执行;--analyze 可导出 TileGraph/UB 分析 JSON。</p>
+    <p class="hint">图例: 实线=主数据流, 虚线=residual / cache 读回。</p>
+  </div>
+</div>
+<script>
+"use strict";
+/* ============================ 常量 ============================ */
+const H=6144, V=154880, HEADS=64, QLORA=2048, KVLORA=512, NOPE=192, ROPE=64, QK=256, VD=256;
+const E=256, TOPK=8, EFFN=2048, DFFN=12288, IH=32, IDIM=128, ITOPK=2048;
+const BN=128, BS=128, DT=656;      // KV cache: block_num/block_size/dtile (test_forward.py)
+let M=8, TP=1, SOC="ascend910b";
+function ubCap(){ return SOC==="ascend950"?253952:196608; }
+const KIND = {
+  cube:{c:"var(--cube)",bg:"var(--cube-bg)",name:"CUBE"},
+  vec:{c:"var(--vec)",bg:"var(--vec-bg)",name:"VEC"},
+  mix:{c:"var(--mix)",bg:"var(--mix-bg)",name:"MIX"},
+  comm:{c:"var(--comm)",bg:"var(--comm-bg)",name:"COMM"},
+  mem:{c:"var(--mem)",bg:"var(--mem-bg)",name:"MEM"},
+  flow:{c:"var(--flow)",bg:"var(--flow-bg)",name:"FLOW"},
+};
+function ev(s){ if(s==null) return null;
+  try{ return Function("M","TP","H","V","HEADS","QLORA","KVLORA","NOPE","ROPE","QK","VD","E","TOPK","EFFN","DFFN","IH","IDIM","ITOPK","BN","BS","DT",
+    "return ("+s+")")(M,TP,H,V,HEADS,QLORA,KVLORA,NOPE,ROPE,QK,VD,E,TOPK,EFFN,DFFN,IH,IDIM,ITOPK,BN,BS,DT); }
+  catch(e){ return null; }
+}
+function fmtB(n){ if(n==null) return "—"; if(n<1024) return n+" B";
+  if(n<1048576) return (n/1024).toFixed(1)+" KiB";
+  if(n<1073741824) return (n/1048576).toFixed(2)+" MiB";
+  return (n/1073741824).toFixed(2)+" GiB"; }
+function fmtF(n){ if(n==null) return "—"; if(n<1e6) return n.toFixed(0)+" FLOP";
+  if(n<1e9) return (n/1e6).toFixed(1)+" MFLOP";
+  if(n<1e12) return (n/1e9).toFixed(2)+" GFLOP";
+  return (n/1e12).toFixed(2)+" TFLOP"; }
+function sh(s){ return s==null?"":String(s)
+  .replaceAll("{M}",M).replaceAll("{TP}",TP).replaceAll("{E}",E).replaceAll("{TOPK}",TOPK)
+  .replaceAll("{H}",H).replaceAll("{V}",V).replaceAll("{HEADS}",HEADS).replaceAll("{QLORA}",QLORA)
+  .replaceAll("{KVLORA}",KVLORA).replaceAll("{NOPE}",NOPE).replaceAll("{ROPE}",ROPE).replaceAll("{QK}",QK)
+  .replaceAll("{VD}",VD).replaceAll("{EFFN}",EFFN).replaceAll("{DFFN}",DFFN)
+  .replaceAll("{IH}",IH).replaceAll("{IDIM}",IDIM).replaceAll("{ITOPK}",ITOPK)
+  .replaceAll("{BN}",BN).replaceAll("{BS}",BS).replaceAll("{DT}",DT); }
+
+/* ============================ 算子详情库 ============================ */
+/* ins/outs: [名称, 形状, dtype, 数据量expr(函数 M,TP)] */
+const OPS = {
+/* ───────────── 全局 ───────────── */
+s1:{t:"Embedding gather_v2",k:"vec",kn:"gather_v2",kt:"AscendC_VEC",obj:"gather_v2.o",
+ d:"词嵌入查表: 以 input_ids 为索引从 embedding 表中按行 gather。",
+ ins:[["weight","[{V}, 6144]","bf16","V*H*2"],["input_ids","[{M}]","int32","M*4"]],
+ outs:[["hidden_states","[{M}, 6144]","bf16","M*H*2"]],
+ mem:"embedding 表常驻 HBM (约 1.86 GiB, TP 不切分); 输出为连续 2D ND 布局。",
+ dep:"上游: 输入 token ids (scheduler) → 下游: L0 input_layernorm",
+ til:"按行(gather)拷贝, 无规约; 每行 12 KiB 向量搬运。",
+ perf:{flops:null,traffic:"M*H*2 + M*4",note:"纯访存算子, 数据量 = 输出行读取 + 输出写回, 无计算 roofline 瓶颈。"}},
+s2:{t:"Decoder ×3 (Dense MLP)",k:"flow",kn:"(展开见下)",kt:"—",obj:"—",
+ d:"L0–L2 为稠密 FFN 层: gate_up/down 为 W4A8 FP4 权重, 详见底部 Dense MLP 流水线。",
+ ins:[["hidden","[{M}, 6144]","bf16","M*H*2"]],
+ outs:[["hidden","[{M}, 6144]","bf16","M*H*2"]],
+ mem:"每层 Dense 权重 ≈ 113 MiB (gate_up 75.5 + down 37.7, FP4 打包)。",dep:"—",til:"—",
+ perf:{flops:null,traffic:null,note:"单层 Dense FFN 计算量 2·M·6144·24576 + 2·M·12288·6144 ≈ 0.9 GFLOP (M=8, TP=1)"}},
+s3:{t:"Decoder ×7 (MoE)",k:"flow",kn:"(展开见下)",kt:"—",obj:"—",
+ d:"L3–L9 为 MoE 层 (256 路由专家 + 1 共享专家), 详见中部 MoE 流水线。",
+ ins:[["hidden","[{M}, 6144]","bf16","M*H*2"]],
+ outs:[["hidden","[{M}, 6144]","bf16","M*H*2"]],
+ mem:"每层 MoE 路由专家权重 ≈ 5.1 GiB (gate_up 3.22 GiB + down 1.61 GiB + e8m0 scale ≈ 0.30 GiB)。",
+ dep:"—",til:"—",
+ perf:{flops:null,traffic:null,note:"7 层 MoE 权重合计 ≈ 35.8 GiB, 是权重带宽的主要消耗者 (M 小时 decode 为 memory-bound)。"}},
+s4:{t:"Final RMSNorm",k:"vec",kn:"add_rms_norm",kt:"AscendC_VEC",obj:"add_rms_norm.o",
+ d:"模型出口归一化: add_rms_norm(hidden, residual) 融合残差加与 RMSNorm。",
+ ins:[["x (最后层 MoE 输出)","[{M}, 6144]","bf16","M*H*2"],["residual","[{M}, 6144]","bf16","M*H*2"],["gamma","[6144]","bf16","12288"]],
+ outs:[["normed","[{M}, 6144]","bf16","M*H*2"],["residual'(丢弃)","[{M}, 6144]","bf16","M*H*2"]],
+ mem:"连续 ND; gamma 常驻 HBM 12 KiB。",dep:"上游: L9 MoE all_reduce → 下游: lm_head",
+ til:"按行 (6144 元素 = 48 UB 行内块) 归约求平方和, row-wise 并行。",
+ perf:{flops:"M*H*8",traffic:"M*H*2*4",note:"≈ 访存受限; 归约量极小。"}},
+s5:{t:"LM Head",k:"cube",kn:"tiled_matmul_columnmajorA5 + all_gather",kt:"AscendC_CUBE",obj:"matmulA5.o",
+ d:"ParallelLinear(column parallel): logits = x @ W^T, W 按 N(vocab) 列切分到各 TP rank, 输出 all_gather 拼接。",
+ ins:[["hidden","[{M}, 6144]","bf16","M*H*2"],["weight","[{V}/{TP}, 6144]","bf16","V*H*2/TP"]],
+ outs:[["logits (本 rank)","[{M}, {V}/{TP}]","bf16","M*V*2/TP"],["logits (gather 后)","[{M}, {V}]","bf16","M*V*2"]],
+ mem:"weight 为 column-major (B^T) 布局, 直接喂 Cube 单元; 每 rank 权重 6144×154880×2/{TP} ≈ 0.90 GiB(TP1)。",
+ dep:"上游: final norm → 下游: sampler (argmax/top-p)",
+ til:"N 按列 major tiling; M=decode 时极小, 靠 N 维摊开多核。",
+ perf:{flops:"2*M*H*V",traffic:"V*H*2/TP + M*V*2/TP*2",note:"M=8: 15.2 GFLOP; 权重 0.90 GiB 读取主导 → 典型 memory-bound 大 GEMV。"}},
+/* ───────────── 层内: layernorm 与量化 ───────────── */
+b1:{t:"input_layernorm",k:"vec",kn:"rms_norm (L0) / add_rms_norm (L≥1)",kt:"AscendC_VEC",obj:"rms_norm.o / add_rms_norm.o",
+ d:"L0: rms_norm(x, gamma) 单独归一化, residual 初始化为 x; L≥1: add_rms_norm(x, prev_residual, gamma) 融合残差加, 输出 (normed, new_residual, rstd)。",
+ ins:[["x","[{M}, 6144]","bf16","M*H*2"],["prev_residual (L≥1)","[{M}, 6144]","bf16","M*H*2"],["gamma","[6144]","bf16","12288"]],
+ outs:[["normed (→Attention)","[{M}, 6144]","bf16","M*H*2"],["residual (→post_LN)","[{M}, 6144]","bf16","M*H*2"],["rstd","[{M}]","bf16","M*2"]],
+ mem:"全部 ND 连续; 每行 12 KiB 可整个驻留 UB (UB ≈ 192–256 KiB/核)。",
+ dep:"上游: 上一层 MoE all_reduce (或 embed) → 下游: dynamic_mx_quant / wk / weights_proj",
+ til:"row-wise: 每 token 一个核任务, 行内 6144 点归约 + 仿射。",
+ perf:{flops:"M*H*8",traffic:"M*H*2*3",note:"访存受限; 融合 add 省一次 HBM 往返 (2×M×H×2 字节)。"}},
+b2:{t:"dynamic_mx_quant",k:"vec",kn:"tiled_dynamic_mx_quant_mk",kt:"AscendC_VEC",obj:"dynamic_mx_quant.o",
+ d:"Microscaling 量化: 每 32 元素块求 absmax → E8M0 指数 scale, 激活 BF16→FP8 E4M3。为后续 A8 矩阵乘准备操作数。",
+ ins:[["x","[{M}, 6144]","bf16","M*H*2"]],
+ outs:[["y (fp8)","[{M}, 6144]","fp8_e4m3","M*H"],["scale","[{M}, 96, 2]","fp8_e8m0","M*192"],
+       ["说明: scale 两两打包进 byte; 每 32 元素 1 个 e8m0","","",""]],
+ mem:"FP8 输出与 BF16 输入同形 (1B/elem); scale 行内 192 B。量化块沿 K(hidden) 维划分。",
+ dep:"上游: input_layernorm → 下游: q_a_proj 与 kv_a_proj_with_mqa (同一份 A8)",
+ til:"按 M×K 块并行, 每 32 列一个 scale 组; K=6144 → 192 组/行。",
+ perf:{flops:"M*H*4",traffic:"M*H*3 + M*192",note:"M=8: 读 96 KiB 写 25 KiB; 向量单元 bound, 极快。"}},
+/* ───────────── Q 路 ───────────── */
+b3:{t:"q_a_proj (A8W8)",k:"cube",kn:"mega_matmul_mxfp8",kt:"AscendC_CUBE",obj:"matmul_mxfp8.o",
+ d:"低秩 Q 下投影: hidden → q_lora (2048)。MXFP8 矩阵乘 (A8 激活 × W8 权重, 逐 32 块 dequant)。",
+ ins:[["A (fp8)","[{M}, 6144]","fp8_e4m3","M*H"],["A_scale","[{M}, 96, 2]","fp8_e8m0","M*192"],
+      ["W (NZ fp8)","[64, 192, 16, 32] → 2048×6144","fp8_e4m3","2048*6144"],
+      ["W_scale","[2048, 192]","fp8_e8m0","2048*192"]],
+ outs:[["q_a","[{M}, 2048]","fp32","M*2048*4"]],
+ mem:"W 为 ACL_FRACTAL_NZ (format 29) 4D 分形布局 [N/32, K/16, 16, 32], 对齐 Cube 内积维度; 常驻 HBM 12.6 MiB。",
+ dep:"上游: dynamic_mx_quant → 下游: q_a_layernorm (wq_b 亦复用 q_a 经 norm 后的结果)",
+ til:"M 小 → 按 N=2048 摊 nuclear; L1 tile 16×32 对齐 NZ 分形; double-buffer A/B。",
+ perf:{flops:"2*M*H*2048",traffic:"2048*6144 + M*(H+2048*4)",note:"M=8: 0.20 GFLOP; 权重 12.6 MiB 读取主导。"}},
+b4:{t:"q_a_layernorm + 量化",k:"vec",kn:"rms_norm_dynamic_mxfp8",kt:"AscendC_VEC",obj:"rms_norm_dynamic_mxfp8.o",
+ d:"融合算子: RMSNorm(q_a) 后直接 MX 量化输出 FP8 + scale, 省去 norm→quant 两次 HBM 往返。",
+ ins:[["q_a","[{M}, 2048]","fp32/bf16","M*2048*4"],["gamma","[2048]","bf16","4096"],["eps","标量 1e-5","",""]],
+ outs:[["q_a_normed (fp8)","[{M}, 2048]","fp8_e4m3","M*2048"],["q_a_scale","[{M}, 32, 2]","fp8_e8m0","M*64"]],
+ mem:"行内 2 KiB, 单核可全驻留 UB; 该 fp8 结果同时供 q_b_proj 与 indexer wq_b 使用 (一处计算两处消费)。",
+ dep:"上游: q_a_proj → 下游: q_b_proj, indexer.wq_b",
+ til:"row-wise; K=2048 → 64 个 32 元素 scale 组。",
+ perf:{flops:"M*2048*8",traffic:"M*2048*6 + M*64",note:"融合节省一次中间张量往返 ≈ 2×M×2048×(4+1) B。"}},
+b5:{t:"q_b_proj (A8W8)",k:"cube",kn:"mega_matmul_mxfp8",kt:"AscendC_CUBE",obj:"matmul_mxfp8.o",
+ d:"Q 上投影: q_lora (2048) → 每头 qk_head_dim=256, 共 64 头 × 256 = 16384 (TP 下头数 ÷TP)。",
+ ins:[["A (fp8)","[{M}, 2048]","fp8_e4m3","M*2048"],["A_scale","[{M}, 32, 2]","fp8_e8m0","M*64"],
+      ["W (NZ fp8)","[512, 128, 16, 32] → 16384×2048","fp8_e4m3","16384*2048/TP"],
+      ["W_scale","[16384, 64]","fp8_e8m0","16384*64/TP"]],
+ outs:[["q_b","[{M}, {HEADS*256/TP}]","fp32","M*16384*4/TP"]],
+ mem:"W NZ 布局 33.6 MiB/TP1; 常驻 HBM。",
+ dep:"上游: q_a_layernorm → 下游: matmul_rope (吸收 w_kc)",
+ til:"N=16384 大 N GEMM; K=2048 一次装订; NZ 16×32 分形 tiling。",
+ perf:{flops:"2*M*2048*(16384/TP)",traffic:"16384*2048/TP + M*(2048+16384*4/TP)",note:"M=8: 0.54 GFLOP; 权重 33.6 MiB 主导。"}},
+b6:{t:"matmul_rope (w_kc 吸收)",k:"mix",kn:"mega_matmul_rope",kt:"AscendC_MIX",obj:"matmul_rope.o",
+ d:"融合 Cube+Vec: 每头 q_nope 分量与 w_kc([64,192,512], 由 kv_b_proj 切分) 相乘被吸收进 kv_lora 潜空间 (192→512), rope 分量 (64) 经 Sin/Cos 旋转, 两段拼接输出。",
+ ins:[["q_b","[{M}, {HEADS*256/TP}]","fp32→bf16","M*16384*2/TP"],
+      ["w_kc","[{HEADS/TP}, 192, 512]","bf16","HEADS*192*512*2/TP"],
+      ["mla_sin/cos_cache","[各 {M}, 64]","bf16","M*64*2*2"]],
+ outs:[["q_out","[{M}, {HEADS/TP}, 576] (512 latent + 64 rope)","bf16","M*576*2/TP"]],
+ mem:"w_kc 为 kv_b_proj [28672,512] 按 (192|256) 维切分后的连续 bf16; 融合免去中间 q_nope@w_kc 写回。",
+ dep:"上游: q_b_proj → 下游: kv_quant_sparse_flash_attention (作为 Q)",
+ til:"MIX: Cube 做 64 组 batched [192→512] GEMM, Vec 做 rope; 每 token×头为独立任务。",
+ perf:{flops:"2*M*(HEADS/TP)*192*512",traffic:"HEADS*192*512*2/TP + M*16384*2/TP + M*576*2/TP",note:"M=8: 0.10 GFLOP; w_kc 12.6 MiB 主导; 融合省 1 次中间写回 + 1 次 kernel 启动。"}},
+/* ───────────── KV 路 ───────────── */
+b7:{t:"kv_a_proj_with_mqa",k:"cube",kn:"mega_matmul_mxfp8",kt:"AscendC_CUBE",obj:"matmul_mxfp8.o",
+ d:"KV 联合下投影 (MQA): hidden → kv_lora(512) + qk_rope(64) = 576。所有头共享一份 KV latent。",
+ ins:[["A (fp8)","[{M}, 6144]","fp8_e4m3","M*H"],["A_scale","[{M}, 96, 2]","fp8_e8m0","M*192"],
+      ["W (NZ fp8)","[18, 384, 16, 32] → 576×6144","fp8_e4m3","576*6144"],
+      ["W_scale","[576, 192]","fp8_e8m0","576*192"]],
+ outs:[["kv_a","[{M}, 576]","fp32","M*576*4"]],
+ mem:"W NZ 3.4 MiB; 输出 576 维 = [512 kv_latent | 64 rope] 两段。",
+ dep:"上游: dynamic_mx_quant (与 q_a 共享 A8) → 下游: rms_norm_rope_scatter",
+ til:"小 N GEMM, M摊核; 与 q_a_proj 读同一份 A8, 可合并调度。",
+ perf:{flops:"2*M*H*576",traffic:"576*6144 + M*(6144+576*4)",note:"M=8: 57 MFLOP; 3.4 MiB 权重主导。"}},
+b8:{t:"rms_norm_rope_scatter",k:"vec",kn:"mega_rms_norm_rope_scatter",kt:"AscendC_VEC",obj:"rms_norm_rope_scatter.o",
+ d:"三合一融合: 前 512 维做 RMSNorm(kv latent), 后 64 维做 RoPE, 结果按 slot_mapping 原地 scatter 写入 paged KV cache; 返回 cache 视图 kvkr_cache 作为后续 K/V。",
+ ins:[["X","[{M}, 576]","fp32","M*576*4"],["gamma","[512]","bf16","1024"],
+      ["mla_sin/cos","[各 {M}, 64]","bf16","M*256"],
+      ["k_cache","[{BN}, {BS}, 1, {DT}]","fp8_e4m3","BN*BS*DT"],
+      ["slot_mapping","[{M}, 1]","int64","M*8"]],
+ outs:[["kvkr_cache (cache 视图)","[{BN},{BS},1,{DT}] 中 slot 行","fp8_e4m3","M*DT"],
+       ["(原地写, 无新分配)","","",""]],
+ mem:"k_cache 为分页 PA 布局 [block_num, block_size, 1, dtile=656] fp8, block_tables 逻辑索引; 测试配置 10.6 MiB, 部署时随上下文线性增长 (656 B/token·层)。",
+ dep:"上游: kv_a_proj_with_mqa → 下游: kv_quant_sparse_flash_attention (K=V=kvkr_cache)",
+ til:"row-wise: 每 token 一次 norm + 64 点 rope + 定点 scatter; scatter 按块对齐写。",
+ perf:{flops:"M*576*6",traffic:"M*576*4 + M*DT",note:"三算子融合省 2 次中间往返与 2 次 kernel 启动; decode 场景 KV 写入是每层固定访存。"}},
+kcache:{t:"Paged KV Cache",k:"mem",kn:"(ForwardBatchInfo.k_cache)",kt:"—",obj:"—",
+ d:"分页 KV cache, PA_BSND 布局; block_tables [batch, block_num] int32 做逻辑→物理映射。本层写入, 注意力读取。",
+ ins:[["(写入源)","rms_norm_rope_scatter","",""]],
+ outs:[["(读取方)","kv_quant_sparse_flash_attention","",""]],
+ mem:"[BN=128, BS=128, 1, DT=656] fp8_e4m3 ≈ 10.6 MiB (测试); 656 = 576+80 对齐 tile。",
+ dep:"—",til:"按 128-token 物理块分配。",
+ perf:{flops:null,traffic:null,note:"每 token·层新增 656 B fp8; 长上下文下与层数相乘构成主要 HBM 占用之一。"}},
+/* ───────────── DSA Indexer ───────────── */
+b9:{t:"indexer.wq_b (A8W8)",k:"cube",kn:"tiled_matmul_columnmajorA5(fp8)",kt:"AscendC_CUBE",obj:"matmulA5.o",
+ d:"Indexer 的 Q 上投影 (colmajor/trans_b): q_lora fp8 → 32 头 × 128 维 index 空间。",
+ ins:[["q_a_normed (fp8)","[{M}, 2048]","fp8_e4m3","M*2048"],["q_a_scale","[{M}, 32, 2]","fp8_e8m0","M*64"],
+      ["W","[4096, 2048] colmajor","fp8_e4m3","4096*2048"],
+      ["W_scale","[4096, 64]","fp8_e8m0","4096*64"]],
+ outs:[["idx_q","[{M}, 4096]","fp32","M*4096*4"]],
+ mem:"W colmajor 布局 8.4 MiB; 与主注意力共享 q_a fp8 (无重复量化)。",
+ dep:"上游: q_a_layernorm → 下游: idx_q RoPE+量化",
+ til:"column-major B, K=2048; N=4096 摊核。",
+ perf:{flops:"2*M*2048*4096",traffic:"4096*2048 + M*(2048+4096*4)",note:"M=8: 0.13 GFLOP。"}},
+b10:{t:"idx_q RoPE + dynamic_quant_v2",k:"vec",kn:"matmul(bf16) + tiled_dynamic_quant_v2_mk",kt:"AscendC_VEC",obj:"dynamic_quant_v2.o",
+ d:"idx_q reshape 为 [M×32, 128] 后与 index_cos_sin_cache [128,128] 相乘做 RoPE; 再 dynamic_quant_v2 逐行 (per-row) 量化为 FP8 + fp32 scale (供 lightning indexer 的 int8 点积)。",
+ ins:[["idx_q","[{M}, 4096]","fp32","M*4096*4"],["index_cos_sin_cache","[128, 128]","bf16","32768"]],
+ outs:[["idx_q' (fp8)","[{M}×32, 128]","fp8_e4m3","M*4096"],
+       ["idx_q_scale","[{M}×32]","fp32","M*128*4"]],
+ mem:"cos_sin cache 常驻 32 KiB; per-row (非 MX) 量化, scale 一行一个 fp32。",
+ dep:"上游: wq_b → 下游: quant_lightning_indexer (Q 侧)",
+ til:"行并行; 128×128 matmul 每行一次 128 点内积 ×128 列。",
+ perf:{flops:"2*M*32*128*128",traffic:"M*4096*5 + 32768",note:"M=8: 8.4 MFLOP; 小矩阵 vec 友好。"}},
+b12:{t:"indexer.wk (bf16)",k:"cube",kn:"tiled_matmul_columnmajorA5",kt:"AscendC_CUBE",obj:"matmulA5.o",
+ d:"Indexer 的 K 投影: hidden bf16 → 128 维 (单头 MQA)。",
+ ins:[["hidden","[{M}, 6144]","bf16","M*H*2"],["W","[128, 6144]","bf16","128*6144*2"]],
+ outs:[["idx_k","[{M}, 128]","bf16","M*128*2"]],
+ mem:"W 1.5 MiB colmajor; 与 weights_proj 同读 hidden, 调度上相邻。",
+ dep:"上游: input_layernorm → 下游: k_norm",
+ til:"小 GEMM; N=128 摊核有限, M 大时按 M 切。",
+ perf:{flops:"2*M*6144*128",traffic:"128*6144*2 + M*(6144+128)*2",note:"M=8: 12.6 MFLOP。"}},
+b13:{t:"k_norm (LayerNorm)",k:"vec",kn:"mega_layer_norm_v4",kt:"AscendC_VEC",obj:"layer_norm_v4.o",
+ d:"对 idx_k 做 LayerNorm (含 bias), fp32 精度; 输出 (y, mean, rstd)。",
+ ins:[["idx_k","[{M}, 128]","fp32","M*128*4"],["gamma/beta","[128] 各","fp32","1024"],
+      ["normalized_shape","[1]","int64","8"]],
+ outs:[["idx_k'","[{M}, 128]","fp32","M*128*4"],["mean/rstd","[{M},1] 各","fp32","M*8"]],
+ mem:"行内 512 B, 完全 UB 驻留。",dep:"上游: wk → 下游: RoPE+量化",
+ til:"row-wise 128 点归约。",perf:{flops:"M*128*10",traffic:"M*128*8",note:"极小。"}},
+b14:{t:"idx_k RoPE + dynamic_quant_v2",k:"vec",kn:"matmul + tiled_dynamic_quant_v2_mk",kt:"AscendC_VEC",obj:"dynamic_quant_v2.o",
+ d:"与 idx_q 相同的 RoPE (乘 index_cos_sin_cache) + per-row FP8 量化。",
+ ins:[["idx_k","[{M}, 128]","fp32","M*128*4"],["index_cos_sin_cache","[128,128]","bf16","32768"]],
+ outs:[["idx_k' (fp8)","[{M}, 128]","fp8_e4m3","M*128"],["idx_k_scale","[{M}]","fp32","M*4"]],
+ mem:"—",dep:"上游: k_norm → 下游: scatter_update 写 index_k_buffer",
+ til:"row-wise。",
+ perf:{flops:"2*M*128*128",traffic:"M*128*9 + 32768",note:"M=8: 0.26 MFLOP。"}},
+b15:{t:"scatter_update ×2",k:"vec",kn:"mega_scatter_update",kt:"AscendC_VEC",obj:"scatter_update.o",
+ d:"将本步 idx_k 与其 scale 原地写入 indexer 的全局 K 缓冲 (供所有层共享读取): index_k_buffer 与 index_k_scale_buffer 两次 scatter。",
+ ins:[["index_k_buffer","[{BN}×{BS}, 128]","fp8_e4m3","BN*BS*128"],
+      ["index_k_scale_buffer","[{BN}×{BS}, 1]","fp32","BN*BS*4"],
+      ["slot_mapping","[{M}, 1]","int64","M*8"],
+      ["updates","[{M}, 128] / [{M}, 1]","fp8/fp32","M*128+M*4"]],
+ outs:[["buffer (原地视图)","同输入 storage","—","0 (原地)"]],
+ mem:"index_k_buffer ≈ 2.1 MiB + scale 64 KiB (测试配置); 原地更新返回同 storage 视图, DAG 中显式建边保证顺序。",
+ dep:"上游: idx_k RoPE+quant → 下游: quant_lightning_indexer (跨层共享)",
+ til:"按 slot 定点写 128 B/行。",
+ perf:{flops:null,traffic:"M*(128+4+8)",note:"M=8: ≈1.1 KiB 写; 纯访存。"}},
+idxbuf:{t:"Index K Buffer",k:"mem",kn:"(ForwardBatchInfo.index_k_buffer)",kt:"—",obj:"—",
+ d:"Indexer 的量化 K 缓冲 (fp8 + fp32 scale), 全部层共享; 每步 decode 由 scatter_update 增量维护。",
+ ins:[["(写入)","scatter_update","",""]],
+ outs:[["(读取)","quant_lightning_indexer (reshape [-1,128,1,128])","",""]],
+ mem:"[{BN}×{BS}, 128] fp8 ≈ 2.1 MiB + [{BN}×{BS}, 1] fp32 64 KiB。",
+ dep:"—",til:"—",perf:{flops:null,traffic:null,note:"indexer 的 K 不随层变化, 一次写入多层复用 (DSA 关键设计)。"}},
+b16:{t:"indexer.weights_proj",k:"cube",kn:"tiled_matmul_columnmajorA5",kt:"AscendC_CUBE",obj:"matmulA5.o",
+ d:"Indexer 头间加权投影: hidden → 32 个 index 头的聚合权重 w (打分时 Σ_h w_h · q·k)。",
+ ins:[["hidden","[{M}, 6144]","bf16","M*H*2"],["W","[32, 6144]","bf16","32*6144*2"]],
+ outs:[["weights","[{M}, 32]","bf16","M*32*2"]],
+ mem:"W 0.38 MiB。",dep:"上游: input_layernorm → 下游: quant_lightning_indexer",
+ til:"极小 GEMM。",perf:{flops:"2*M*6144*32",traffic:"32*6144*2 + M*6144*2",note:"M=8: 3.1 MFLOP。"}},
+b17:{t:"quant_lightning_indexer",k:"mix",kn:"quant_lightning_indexer",kt:"AscendC_MIX",obj:"quant_lightning_indexer.o",
+ d:"DSA 稀疏选择器: 对每个 query token, 与 KV cache 中全部历史 token 的 32 头 fp8 内积 (逐头 dot 后按 weights 加权求和), 取分数 top-2048 的 token 索引。sparse_mode=3 (左 padding 因子), 布局 Q=BSND / KV=PA_BSND。",
+ ins:[["idx_q (fp8)","[B, S, 32, 128]","fp8_e4m3","M*4096"],
+      ["index_k_buffer","[-1, 128, 1, 128]","fp8_e4m3","BN*BS*128"],
+      ["weights","[B, S, 32]","bf16","M*64"],
+      ["q/k dequant scale","[M×32] / [-1,128,1]","fp32","M*512+BN*BS*4"],
+      ["q_seq_len / kv_seq_len","[1]","int32","8"],
+      ["block_tables","[1, {BN}]","int32","512"]],
+ outs:[["topk_indices","[B, S, 1, 2048]","int32","M*2048*4"]],
+ mem:"读全量 KV index buffer (2.1 MiB); 输出索引 8 KiB/token。",
+ dep:"上游: idx_q/idx_k 链 + weights_proj → 下游: kv_quant_sparse_flash_attention",
+ til:"MIX: q×k^T 走 Cube (fp8 dot), top-k 归约走 Vec; 按 batch×q_block 分 tile, KV 经 block_tables 分页装载。",
+ perf:{flops:"2*M*KVLEN*IH*IDIM",traffic:"BN*BS*128 + M*(4096+8192)",note:"与历史长度线性: 每层≈O(S·L·4096) 点积; 仅每 4 层重算 (其余层复用 prev_topk_indices), 是 DSA 对 full-attention 的核心摊销。"}},
+skipnote:{t:"DSA 跨层复用",k:"vec",kn:"dsa_layer_skips_topk",kt:"—",obj:"—",
+ d:"index_topk_freq=4, skip_offset=3: 仅 (max(l-2,0))%4==0 的层重算 topk (10 层测试配置中为 L0,L1,L2,L6); 其余层直接把上一层的 topk_indices 透传给稀疏注意力。",
+ ins:[["prev_topk_indices","[B, S, 1, 2048]","int32","M*8192"]],
+ outs:[["topk_indices (透传)","同输入","int32","0"]],
+ mem:"零拷贝传递。",dep:"层间: Glm52DecoderLayer 返回 topk_indices 供下一层。",
+ til:"—",perf:{flops:null,traffic:null,note:"省去 3/4 层的 indexer 全链计算。"}},
+/* ───────────── 注意力汇合 ───────────── */
+b18:{t:"kv_quant_sparse_flash_attention",k:"mix",kn:"kv_quant_sparse_flash_attention",kt:"AscendC_MIX",obj:"kv_quant_sparse_flash_attention.o",
+ d:"稀疏 FlashAttention: Q [.., 576](512 latent+64 rope) 只与 topk_indices 选中的 ≤2048 个 KV token 计算; KV 直接用 fp8 cache (kv_quant, 带块 dequant), K/V 同源 (MQA latent)。输出 latent 空间注意力结果 (576-64=512 维/头)。",
+ ins:[["q_out","[B, S, {HEADS/TP}, 576]","bf16","M*576*2/TP"],
+      ["K=V=kvkr_cache","PA_BSND fp8","fp8_e4m3","BN*BS*DT"],
+      ["topk_indices","[B, S, 1, 2048]","int32","M*8192"],
+      ["block_tables","[1, {BN}]","int32","512"],
+      ["q/kv_seq_len","[1]","int32","8"]],
+ outs:[["attn_out","[B, S, {HEADS/TP}, 512]","bf16","M*512*2/TP"]],
+ mem:"KV 按需分页读取: 实际读 ≈ min(kv_len, 2048+q_len)×576B×每头共享; scale_value=1.0, rope_head_dim=64。",
+ dep:"上游: matmul_rope(Q) + rms_norm_rope_scatter(KV) + quant_lightning_indexer(indices) → 下游: matmul_transpose(w_vc)",
+ til:"flash 分块: Q tile 驻留 UB, KV 经 block_tables 逐块装载, 在线 softmax (无全量 mask); sparse_indices 决定 KV 访问集合。",
+ perf:{flops:"2*M*(HEADS/TP)*512*ITOPK",traffic:"M*576*2/TP + M*ITOPK*576",note:"M=8: 0.86 GFLOP; 相比 dense 注意力 (kv_len 长时) 计算与访存都被 2048 截断 → 长上下文近似常数开销。"}},
+b19:{t:"matmul_transpose (w_vc)",k:"cube",kn:"mega_matmul_transpose",kt:"AscendC_CUBE",obj:"matmul_transpose.o",
+ d:"V 逆变换 (batched): 把 latent 空间注意力输出经 w_vc ([64,512,256], kv_b_proj v 段转置) 映射回 v_head 空间。",
+ ins:[["attn_out","[{BS}, {HEADS/TP}, 512]","bf16","M*512*2/TP"],
+      ["w_vc","[{HEADS/TP}, 512, 256]","bf16","HEADS*512*256*2/TP"]],
+ outs:[["attn_v","[{BS}, {HEADS/TP}, 256]","bf16","M*256*2/TP"]],
+ mem:"w_vc 为 kv_b_proj [28672,512] 切分后 transpose(1,2) 的连续 bf16, 16.8 MiB; 融合进 kv_b 装载即无需 kv_b 完整 GEMM (MLA 吸收法)。",
+ dep:"上游: kv_quant_sparse_flash_attention → 下游: reshape + dynamic_mx_quant",
+ til:"batched GEMM: B=64 组, 每组 [512]×[512,256]; 组间并行, K=512 double-buffer。",
+ perf:{flops:"2*M*(HEADS/TP)*512*256",traffic:"HEADS*512*256*2/TP + M*(512+256)*2/TP",note:"M=8: 0.27 GFLOP; 权重 16.8 MiB 主导。"}},
+b20:{t:"dynamic_mx_quant (attn)",k:"vec",kn:"tiled_dynamic_mx_quant_mk",kt:"AscendC_VEC",obj:"dynamic_mx_quant.o",
+ d:"注意力输出 reshape 为 [BS, 16384] 后做 MX 量化, 供 o_proj 的 A8 输入。",
+ ins:[["attn_flat","[{M}, {HEADS*256/TP}]","bf16","M*16384*2/TP"]],
+ outs:[["fp8","[{M}, 16384]","fp8_e4m3","M*16384/TP"],["scale","[{M}, 256, 2]","fp8_e8m0","M*512/TP"]],
+ mem:"—",dep:"上游: matmul_transpose → 下游: o_proj",
+ til:"K=16384 → 512 scale 组/行。",
+ perf:{flops:"M*16384*4/TP",traffic:"M*16384*3/TP",note:"M=8: 读 256 KiB 写 130 KiB。"}},
+b21:{t:"o_proj (A8W8)",k:"cube",kn:"tiled_matmul_columnmajorA5(fp8)",kt:"AscendC_CUBE",obj:"matmulA5.o",
+ d:"注意力输出投影 (colmajor/trans_b): 64 头×256 → hidden 6144。",
+ ins:[["A (fp8)","[{M}, {16384/TP}]","fp8_e4m3","M*16384/TP"],
+      ["A_scale","[{M}, {256/TP*…}, 2]","fp8_e8m0","M*512/TP"],
+      ["W","[6144, {16384/TP}] colmajor","fp8_e4m3","6144*16384/TP"]],
+ outs:[["attn_out","[{M}, 6144]","bf16","M*H*2"]],
+ mem:"W colmajor 100.7 MiB/TP1 — 本层最大单权重; 激活侧 fp8 使读取减半。",
+ dep:"上游: dynamic_mx_quant → 下游: all_reduce (TP) / post_attention_layernorm",
+ til:"K=16384 按 colmajor 分形分块, N=6144 摊核; trans_b 直接以 B^T 布局消去显式转置。",
+ perf:{flops:"2*M*(16384/TP)*H",traffic:"6144*16384/TP + M*(16384+6144*2)/TP",note:"M=8: 1.61 GFLOP; 权重 100.7 MiB 主导 → 本算子是 attention 段耗时大头之一。"}},
+b22:{t:"all_reduce (attn)",k:"comm",kn:"mega_allreduce (shmem ring)",kt:"AscendC_VEC",obj:"all_reduce.o",
+ d:"TP>1 时对 o_proj 部分和做 all_reduce (共享内存 ring, 框架经 .workspaces(\"shmem_buf\") 自动分配回收 workspace); TP=1 直通。",
+ ins:[["x","[{M}, 6144]","bf16","M*H*2"]],
+ outs:[["out","[{M}, 6144]","bf16","M*H*2"]],
+ mem:"workspace 为 rank 间共享内存, Recyclable pool 管理; 每次 2(M-1)/M × M×12KiB 片上传输。",
+ dep:"上游: o_proj → 下游: post_attention_layernorm",
+ til:"ring 分段流水; 12 KiB/rank·步。",
+ perf:{flops:null,traffic:"2*(TP-1)/TP*M*H*2",note:"TP=2: 96 KiB 片上/共内存通信, 延迟 ≈ µs 级; TP 越大每层两次 AR 的固定开销越显著。"}},
+b23:{t:"post_attention_layernorm",k:"vec",kn:"add_rms_norm",kt:"AscendC_VEC",obj:"add_rms_norm.o",
+ d:"注意力残差归一化: add_rms_norm(attn_out, residual, gamma) → (normed→MLP, new_residual)。",
+ ins:[["attn_out","[{M}, 6144]","bf16","M*H*2"],["residual","[{M}, 6144]","bf16","M*H*2"],["gamma","[6144]","bf16","12288"]],
+ outs:[["normed (→MLP/MoE)","[{M}, 6144]","bf16","M*H*2"],["residual (→下一层/出口)","[{M}, 6144]","bf16","M*H*2"]],
+ mem:"—",dep:"上游: all_reduce → 下游: MoE gate / shared expert / Dense MLP",
+ til:"row-wise。",
+ perf:{flops:"M*H*8",traffic:"M*H*2*3",note:"访存受限。"}},
+/* ───────────── MoE ───────────── */
+c1:{t:"gate (router GEMM)",k:"cube",kn:"tiled_matmul_columnmajorA5",kt:"AscendC_CUBE",obj:"matmulA5.o",
+ d:"路由打分: hidden @ W_gate^T → 每 token 对 256 个专家的 logits。",
+ ins:[["hidden","[{M}, 6144]","bf16","M*H*2"],["W","[256, 6144]","bf16","256*6144*2"]],
+ outs:[["router_logits","[{M}, 256]","bf16","M*256*2"]],
+ mem:"W 3.0 MiB; workspace 由 MoeGating 预留 empty_like(x)。",
+ dep:"上游: post_attention_layernorm → 下游: moe_gating_topk",
+ til:"N=256 小 GEMM。",
+ perf:{flops:"2*M*6144*256",traffic:"256*6144*2 + M*6144*2",note:"M=8: 25 MFLOP。"}},
+c2:{t:"moe_gating_topk",k:"vec",kn:"moe_gating_topk (A5)",kt:"AscendC_VEC",obj:"moe_gating_topk.o",
+ d:"sigmoid 打分 + noaux_tc: logits 加 e_score_correction_bias 后选 top-8 专家 (bias 只参与选择不参与权重), softmax 归一化得路由权重。",
+ ins:[["logits","[{M}, 256]","fp32","M*256*4"],["e_score_correction_bias","[256]","bf16","512"],
+      ["workspace","[{M}, 256]","fp32","M*256*4"]],
+ outs:[["topk_out (权重)","[{M}, 8]","fp32","M*32"],
+       ["expert_idx_out","[{M}, 8]","int32","M*32"],
+       ["norm_out","[{M}, 256]","fp32","M*1024"]],
+ mem:"workspace 常驻复用; topk=8 为内核硬编码约束 (assert)。",
+ dep:"上游: gate → 下游: moe_sort… / moe_finalize (权重) ; experts 分支",
+ til:"行内 256 点排序/选择; top-k 选择用部分排序, 每行独立。",
+ perf:{flops:"M*256*4",traffic:"M*256*4*3",note:"M=8: 8 KiB 级访存; routed_scaling_factor=2.5 在 finalize 侧生效。"}},
+c3:{t:"moe_sort_expertidx_and_token_count",k:"vec",kn:"moe_sort_expertidx_and_token_count",kt:"AscendC_VEC",obj:"moe_sort_expertidx_and_token_count.o",
+ d:"对 [M×8] 个 (token,expert) 对按 expert 升序排序并统计每专家 token 数, 产出排序索引与计数。",
+ ins:[["expert_idx","[{M}, 8]","int32","M*32"],["num_experts","256 (attr)","",""]],
+ outs:[["sort_expert_and_token_count","[{M}×8×2 + 256×2]","int32","M*64+2048"],
+       ["expanded_row_idx","[{M}×8]","int32","M*32"],
+       ["expanded_expert_idx","[256]","int64","2048"]],
+ mem:"输出为紧凑打包 buffer (排序对 + 计数)。",
+ dep:"上游: moe_gating_topk → 下游: moe_init_routing_v3",
+ til:"256 桶计数排序 (counting sort), M×8 个元素。",
+ perf:{flops:null,traffic:"M*96+6144",note:"M=8: ≈2 KiB; 决定后续 grouped matmul 的 group 边界。"}},
+c4:{t:"moe_init_routing_v3",k:"vec",kn:"moe_init_routing_v3",kt:"AscendC_VEC",obj:"moe_init_routing_v3.o",
+ d:"路由展开: 按 expert 序重排 token 行,并顺带完成 MX 量化 — 输出 FP8 expanded_x + e8m0 scale (免去单独 quant 算子)。",
+ ins:[["x (hidden)","[{M}, 6144]","bf16","M*H*2"],
+      ["expert_idx","[{M}, 8]","int32","M*32"],
+      ["expanded_row_idx","[{M}×8]","int32","M*32"],
+      ["sort/count","(来自 c3)","int32","M*64+2048"]],
+ outs:[["expanded_x","[{M}×8, 6144]","fp8_e4m3 (uint8 存储)","M*8*6144"],
+       ["expanded_scale","[{M}×8, 192, 2]","fp8_e8m0","M*8*192"]],
+ mem:"expanded 行按 expert 聚簇 → grouped matmul 顺序读; 每行 6 KiB fp8。",
+ dep:"上游: moe_sort… + post_LN hidden → 下游: grouped_matmul(gate_up)",
+ til:"按 (expert, row) 二维 tile; 拷贝+量化一次完成。",
+ perf:{flops:"M*8*6144*4",traffic:"M*6144*2 + M*8*(6144+192)",note:"M=8: 读 96 KiB 写 512 KiB; 扩展×topk 使 MoE 激活读放大 8 倍。"}},
+c5:{t:"abs (expanded_row_idx)",k:"vec",kn:"abs",kt:"AscendC_VEC",obj:"abs.o",
+ d:"expanded_row_idx 取绝对值: 排序阶段用符号位区分填充项, finalize scatter 前转成非负目标行号。",
+ ins:[["expanded_row_idx","[{M}×8]","int32","M*32"]],
+ outs:[["|row_idx|","[{M}×8]","int32","M*32"]],
+ mem:"—",dep:"上游: moe_init_routing → 下游: moe_finalize_routing_v2",
+ til:"逐元素。",perf:{flops:"M*8",traffic:"M*64",note:"M=8: 256 B。"}},
+c6:{t:"compact_active_experts",k:"vec",kn:"compact_active_experts",kt:"AscendC_VEC",obj:"compact_active_experts.o",
+ d:"把 256 个专家计数压缩为「活跃专家表」[active_count, id_0, id_1, …], 供 grouped matmul 跳过零 token 专家 (M 小时绝大多数专家为空)。",
+ ins:[["expert_tokens_count","[256]","int32","1024"]],
+ outs:[["active_experts","[257]","int32","1028"]],
+ mem:"—",dep:"上游: moe_init_routing(count) → 下游: grouped_matmul (expert_depend)",
+ til:"256 点 scan + 压缩。",
+ perf:{flops:null,traffic:"2048*2",note:"微秒级; 与 cumsum 无数据依赖, DAG 中两者并行执行。"}},
+c7:{t:"cumsum (expert tokens)",k:"vec",kn:"cumsum",kt:"AscendC_VEC",obj:"cumsum.o",
+ d:"对每专家 token 数做前缀和, 得 group_list (每专家在 expanded 行中的结束偏移), 作为 grouped matmul 的分组边界。",
+ ins:[["expert_tokens_count","[256]","int32","1024"]],
+ outs:[["group_list (cumsum)","[256]","int32","1024"]],
+ mem:"—",dep:"上游: moe_init_routing(count) → 下游: grouped_matmul / swiglu_group_quant",
+ til:"单块 256 点并行 scan。",
+ perf:{flops:null,traffic:"2048",note:"微秒级。"}},
+c8:{t:"grouped_matmul_w4a8 (gate_up)",k:"mix",kn:"tiled_grouped_matmul_gateup_w4a8",kt:"AscendC_MIX",obj:"grouped_matmul_w4a8.o",
+ d:"MoE 路由专家融合 gate_up GEMM (gate/up 权重拼接): 按专家分组 FP8 激活 × FP4 权重 (Catlass MmadA8W4Mx, 需 Ascend 950), 输出 [M×8, 2×2048]。同时回传 ready_expert 供下游做专家级依赖调度。",
+ ins:[["expanded_x","[{M}×8, 6144]","fp8_e4m3","M*8*6144"],
+      ["W (gate_up, FP4 NZ)","[256, 192, {256/TP}, 16, 32] uint8","fp4_e2m1 打包","E*6144*4096/2/TP"],
+      ["scale_b","[256, 4096, 192, 2]","fp8_e8m0","E*4096*384/TP"],
+      ["group_list","[256] (cumsum)","int32","1024"],
+      ["scale_a","(expanded_scale)","fp8_e8m0","M*8*192"],
+      ["expert_depend (active)","[257]","int32","1028"]],
+ outs:[["y (gate|up)","[{M}×8, {4096/TP}]","bf16","M*8*4096*2/TP"],
+       ["ready_expert","[256]","int64","2048"]],
+ mem:"权重 [E, K/32, N/16, 16, 32] 4D NZ FP4 打包 (2 权重/byte): TP1 时 3.22 GiB/层 + scale 201 MiB — 模型体积的主要来源。",
+ dep:"上游: moe_init_routing + cumsum + compact_active_experts → 下游: swiglu_group_quant",
+ til:"tile_n=256 (attr): N 维 256 切块; 专家级 tiling — 以 active_experts 调度任务, 空专家零开销; group_list 定 M 维边界。",
+ perf:{flops:"2*M*8*6144*(4096/TP)",traffic:"E*6144*4096/2/TP*(活跃比例) + M*8*(6144+4096*2)/TP",note:"M=8: 3.22 GFLOP; 若 256 专家全活跃需读 3.22 GiB 权重, 活跃压缩是 decode 性能关键 (实际仅 ≤min(M×8,256) 个)。"}},
+c9:{t:"swiglu_group_quant",k:"vec",kn:"swiglu_group_quant",kt:"AscendC_VEC",obj:"swiglu_group_quant.o",
+ d:"按专家分组的 SwiGLU + MX 量化融合: silu(gate)×up → bf16 (yOrigin) 并量化为 FP8+scale; group_list 定每专家行边界, expert_depend 保持专家级依赖。",
+ ins:[["y (gate|up)","[{M}×8, {4096/TP}]","bf16","M*8*4096*2/TP"],
+      ["group_list","[256]","int64","2048"],["expert_depend","[256]","int64","2048"]],
+ outs:[["y_fp8","[{M}×8, {2048/TP}]","fp8_e4m3","M*8*2048/TP"],
+       ["y_scale","[{M}×8, {32/TP}, 2]","fp8_e8m0","M*8*64/TP"],
+       ["y_origin (bf16)","[{M}×8, {2048/TP}]","bf16","M*8*2048*2/TP"],
+       ["ready_expert","[256]","int64","2048"]],
+ mem:"一次输出三份 (fp8 / scale / bf16) — bf16 副本供 finalize 精度路径。",
+ dep:"上游: grouped gate_up → 下游: grouped down (fp8 路径)",
+ til:"专家边界内行并行; dim=-1 前后半归约。",
+ perf:{flops:"M*8*2048*8/TP",traffic:"M*8*4096*2/TP*2 + M*8*2048*2/TP",note:"M=8: 读 512 KiB 写 384 KiB; 融合省 1 次 roundtrip。"}},
+c10:{t:"grouped_matmul_w4a8 (down)",k:"mix",kn:"tiled_grouped_matmul_down_w4a8",kt:"AscendC_MIX",obj:"grouped_matmul_w4a8.o",
+ d:"MoE 路由专家 down GEMM: [M×8, 2048] FP8 × FP4 [256, 2048→6144] → 每专家输出行。",
+ ins:[["x (fp8)","[{M}×8, {2048/TP}]","fp8_e4m3","M*8*2048/TP"],
+      ["W (down, FP4 NZ)","[256, 64, {384/TP}, 16, 32] uint8","fp4_e2m1","E*2048*6144/2/TP"],
+      ["scale_b","[256, 6144, 32, 2]","fp8_e8m0","E*6144*64/TP"],
+      ["group_list / scale_a / ready_expert","同上","",""]],
+ outs:[["y","[{M}×8, {6144/TP}]","bf16","M*8*6144*2/TP"],["ready_expert'","[256]","int64","2048"]],
+ mem:"权重 TP1 1.61 GiB/层 + scale 100 MiB。",
+ dep:"上游: swiglu_group_quant → 下游: moe_finalize_routing_v2",
+ til:"同 gate_up (tile_n=256, 专家级调度)。",
+ perf:{flops:"2*M*8*(2048/TP)*6144",traffic:"E*2048*6144/2/TP*(活跃) + M*8*(2048+6144*2)/TP",note:"M=8: 1.61 GFLOP。"}},
+c11:{t:"moe_finalize_routing_v2",k:"vec",kn:"mega_moe_finalize_routing_v2",kt:"AscendC_VEC",obj:"moe_finalize_routing_v2.o",
+ d:"路由归并: 按 |expanded_row_idx| 把每条专家输出行 scatter-累加回原 token 位置, 乘 top-8 权重 (含 routed_scaling_factor=2.5); skip2/bias 为空 (attr 记录 null), user_ws 为 64 MiB 预留 workspace。",
+ ins:[["expanded_x","[{M}×8, {6144/TP}]","bf16","M*8*6144*2/TP"],
+      ["|expanded_row_idx|","[{M}×8]","int32","M*32"],
+      ["skip1","[{M}, 6144] 全零","bf16","M*H*2"],
+      ["scales (topk_out)","[{M}, 8]","fp32","M*32"],
+      ["expert_idx","[{M}, 8]","int32","M*32"],
+      ["user_ws","64 MiB","bf16","67108864"]],
+ outs:[["x_out (routed)","[{M}, {6144/TP}]","bf16","M*6144*2/TP"]],
+ mem:"64 MiB workspace 常驻复用; scatter-累加需原子或分桶归约。",
+ dep:"上游: grouped down + abs + moe_gating_topk → 下游: add(+shared)",
+ til:"按目标 token 行分桶累加; 每行 ≤8 个贡献者。",
+ perf:{flops:"M*8*6144",traffic:"M*8*6144*2/TP + M*6144*2/TP",note:"M=8: 读 768 KiB 写 96 KiB。"}},
+s1m:{t:"shared_expert.dynamic_mx_quant",k:"vec",kn:"tiled_dynamic_mx_quant_mk",kt:"AscendC_VEC",obj:"dynamic_mx_quant.o",
+ d:"共享专家入口量化 (与路由分支并行, 消费同一 hidden)。",
+ ins:[["hidden","[{M}, 6144]","bf16","M*H*2"]],
+ outs:[["fp8","[{M}, 6144]","fp8_e4m3","M*6144"],["scale","[{M}, 96, 2]","fp8_e8m0","M*192"]],
+ mem:"—",dep:"上游: post_LN → 下游: shared gate_up",
+ til:"同 b2。",perf:{flops:"M*6144*4",traffic:"M*6144*3",note:"—"}},
+s2m:{t:"shared gate_up (W4A8)",k:"cube",kn:"matmulA5_w4a8 (upGate=true)",kt:"AscendC_CUBE",obj:"matmulA5_w4a8.o",
+ d:"共享专家 gate_up: 单专家 FP4 权重 [6144→4096] (gate/up 拼接), FP8 激活逐 32 块 dequant。",
+ ins:[["x (fp8)","[{M}, 6144]","fp8_e4m3","M*6144"],["x_scale","[{M}, 96, 2]","fp8_e8m0","M*192"],
+      ["W (FP4 NZ)","[192, 256, 16, 32] uint8 → 6144×4096","fp4_e2m1","6144*4096/2"],
+      ["W_scale","[4096, 192, 2]","uint8(e8m0×2)","4096*192*2"]],
+ outs:[["y","[{M}, 4096]","bf16","M*4096*2"]],
+ mem:"W 12.6 MiB FP4。",dep:"上游: dynamic_mx_quant → 下游: swiglu_group_quant(单组)",
+ til:"NZ 16×32 分形; upGate=true 输出 N×2。",
+ perf:{flops:"2*M*6144*4096",traffic:"6144*4096/2 + M*(6144+4096*2)",note:"M=8: 0.40 GFLOP。"}},
+s3m:{t:"shared swiglu_group_quant",k:"vec",kn:"swiglu_group_quant",kt:"AscendC_VEC",obj:"swiglu_group_quant.o",
+ d:"共享专家 SwiGLU: 单专家场景用 group_list=[M]、expert_depend=[1] 的退化分组, 输出 fp8+scale (含 bf16 origin)。",
+ ins:[["y","[{M}, 4096]","bf16","M*4096*2"],["group_list","[1]=[M]","int64","8"],["expert_depend","[1]=[1]","int64","8"]],
+ outs:[["fp8","[{M}, 2048]","fp8_e4m3","M*2048"],["scale","[{M}, 32, 2]","fp8_e8m0","M*64"],["origin","[{M}, 2048]","bf16","M*2048*2"]],
+ mem:"—",dep:"上游: shared gate_up → 下游: shared down",
+ til:"单组全行。",perf:{flops:"M*2048*8",traffic:"M*4096*4",note:"—"}},
+s4m:{t:"shared down (W4A8)",k:"cube",kn:"matmulA5_w4a8",kt:"AscendC_CUBE",obj:"matmulA5_w4a8.o",
+ d:"共享专家 down: [M, 2048] fp8 × FP4 [2048→6144] → [M, 6144]。",
+ ins:[["x (fp8)","[{M}, 2048]","fp8_e4m3","M*2048"],["x_scale","[{M}, 32, 2]","fp8_e8m0","M*64"],
+      ["W (FP4 NZ)","[32, 384, 16, 32] uint8 → 2048×6144","fp4_e2m1","2048*6144/2"],
+      ["W_scale","[6144, 32, 2]","uint8","6144*64"]],
+ outs:[["x_shared","[{M}, 6144]","bf16","M*H*2"]],
+ mem:"W 6.3 MiB FP4。",dep:"上游: swiglu → 下游: add(与 routed 合并)",
+ til:"NZ 分形。",perf:{flops:"2*M*2048*6144",traffic:"2048*6144/2 + M*(2048+6144*2)",note:"M=8: 0.20 GFLOP。"}},
+c13:{t:"add (routed + shared)",k:"vec",kn:"add",kt:"AscendC_VEC",obj:"add.o",
+ d:"路由专家输出与共享专家输出逐元素相加。",
+ ins:[["x_out (routed)","[{M}, 6144]","bf16","M*H*2"],["x_shared","[{M}, 6144]","bf16","M*H*2"]],
+ outs:[["sum","[{M}, 6144]","bf16","M*H*2"]],
+ mem:"—",dep:"上游: finalize + shared down → 下游: all_reduce",
+ til:"逐元素。",perf:{flops:"M*6144",traffic:"M*6144*2*3",note:"—"}},
+c14:{t:"all_reduce (MLP)",k:"comm",kn:"mega_allreduce (shmem ring)",kt:"AscendC_VEC",obj:"all_reduce.o",
+ d:"MLP 侧 TP all_reduce (routed 已按 N/TP 切分); TP=1 直通。",
+ ins:[["x","[{M}, 6144]","bf16","M*H*2"]],
+ outs:[["out","[{M}, 6144]","bf16","M*H*2"]],
+ mem:"shmem workspace 复用。",dep:"上游: add → 下游: 下一层 input_layernorm",
+ til:"ring 流水。",perf:{flops:null,traffic:"2*(TP-1)/TP*M*H*2",note:"每层 2 次 AR (attn+mlp); blockrt 中二者为独立 OpNode, 可与计算重叠调度。"}},
+/* ───────────── Dense MLP ───────────── */
+d1:{t:"dynamic_mx_quant",k:"vec",kn:"tiled_dynamic_mx_quant_mk",kt:"AscendC_VEC",obj:"dynamic_mx_quant.o",
+ d:"Dense MLP 入口量化。",ins:[["hidden","[{M}, 6144]","bf16","M*H*2"]],
+ outs:[["fp8","[{M}, 6144]","fp8_e4m3","M*6144"],["scale","[{M}, 96, 2]","fp8_e8m0","M*192"]],
+ mem:"—",dep:"上游: post_LN → 下游: gate_up",til:"同 b2。",
+ perf:{flops:"M*6144*4",traffic:"M*6144*3",note:"—"}},
+d2:{t:"gate_up (W4A8)",k:"cube",kn:"matmulA5_w4a8 (upGate)",kt:"AscendC_CUBE",obj:"matmulA5_w4a8.o",
+ d:"Dense FFN gate_up: 6144 → 2×12288 (gate|up 拼接), FP4 权重。",
+ ins:[["x (fp8)","[{M}, 6144]","fp8_e4m3","M*6144"],["scale_a","[{M}, 96, 2]","fp8_e8m0","M*192"],
+      ["W","[192, {1536/TP}, 16, 32] uint8 → 6144×{24576/TP}","fp4_e2m1","6144*24576/2/TP"]],
+ outs:[["y","[{M}, {24576/TP}]","bf16","M*24576*2/TP"]],
+ mem:"W 75.5 MiB/TP1; column-parallel 按 N 切分 (无通信)。",
+ dep:"上游: d1 → 下游: swiglu",til:"NZ 分形, N 维切块。",
+ perf:{flops:"2*M*6144*(24576/TP)",traffic:"6144*24576/2/TP + M*(6144+24576*2)/TP",note:"M=8: 2.4 GFLOP。"}},
+d3:{t:"swiglu",k:"vec",kn:"mega_swiglu (forward_2d)",kt:"AscendC_VEC",obj:"swiglu.o",
+ d:"标准 SwiGLU: gate|up 拼接对切, silu(gate)×up → [M, 12288] bf16 (无量化版本)。",
+ ins:[["y","[{M}, {24576/TP}]","bf16","M*24576*2/TP"],["groupList","[{M}] 占位","int32","M*4"]],
+ outs:[["act","[{M}, {12288/TP}]","bf16","M*12288*2/TP"]],
+ mem:"—",dep:"上游: gate_up → 下游: d4 量化",til:"行内前后半归约。",
+ perf:{flops:"M*12288*8/TP",traffic:"M*24576*2*2/TP",note:"—"}},
+d4:{t:"dynamic_mx_quant",k:"vec",kn:"tiled_dynamic_mx_quant_mk",kt:"AscendC_VEC",obj:"dynamic_mx_quant.o",
+ d:"down 前量化。",ins:[["act","[{M}, {12288/TP}]","bf16","M*12288*2/TP"]],
+ outs:[["fp8","[{M}, {12288/TP}]","fp8_e4m3","M*12288/TP"],["scale","[{M}, {192/TP}, 2]","fp8_e8m0","M*384/TP"]],
+ mem:"—",dep:"上游: swiglu → 下游: down",til:"同 b2。",
+ perf:{flops:"M*12288*4/TP",traffic:"M*12288*3/TP",note:"—"}},
+d5:{t:"down (W4A8)",k:"cube",kn:"matmulA5_w4a8",kt:"AscendC_CUBE",obj:"matmulA5_w4a8.o",
+ d:"Dense FFN down: 12288 → 6144, row-parallel 按 K 切分, 输出部分和。",
+ ins:[["x (fp8)","[{M}, {12288/TP}]","fp8_e4m3","M*12288/TP"],["scale_a","[{M}, {192/TP}, 2]","fp8_e8m0","M*384/TP"],
+      ["W","[{384/TP}, 384, 16, 32] uint8 → {12288/TP}×6144","fp4_e2m1","12288*6144/2/TP"]],
+ outs:[["out (部分和)","[{M}, 6144]","bf16","M*H*2"]],
+ mem:"W 37.7 MiB/TP1。",dep:"上游: d4 → 下游: all_reduce",
+ til:"K 维切分对应 row-parallel。",perf:{flops:"2*M*(12288/TP)*6144",traffic:"12288*6144/2/TP + M*(12288+6144*2)/TP",note:"M=8: 1.2 GFLOP。"}},
+d6:{t:"all_reduce (dense MLP)",k:"comm",kn:"mega_allreduce",kt:"AscendC_VEC",obj:"all_reduce.o",
+ d:"Dense 层 row-parallel 输出归并; TP=1 直通。",
+ ins:[["x","[{M}, 6144]","bf16","M*H*2"]],outs:[["out","[{M}, 6144]","bf16","M*H*2"]],
+ mem:"—",dep:"上游: down → 下游: 下一层",til:"ring。",
+ perf:{flops:null,traffic:"2*(TP-1)/TP*M*H*2",note:"—"}},
+};
+
+/* ============================ UB 使用分析 ============================
+ 口径对齐 blade/builder/src/analysis (hardware_profile.cpp / ub_layout.h):
+  - UB 容量: ascend910b=192 KiB, ascend950=248 KiB; 对齐 32B; 溢出判定 vs ub_capacity
+  - L1(512K)/L0A(64K)/L0B(64K)/L0C(256K) 记入 other_on_chip, 不占 UB
+  - confidence: exact(插件: rms_norm/add_rms_norm/dynamic_mx_quant) /
+    heuristic(按典型 tiling 估算) / conservative(unknown_ub, 审计值=容量上限)
+  - 高水位 = 各 tile 的 max, 非求和; tiling.ubSize 为内核预算(非溢出门限) */
+const UB = {
+s1:{conf:"heuristic",slots:[["inQueue (行 tile)","TQue",1,"6144*2"],["outQueue","TQue",1,"6144*2"],["indicesQueue","TQue",1,"64"]],
+    other:"—",note:"按行查表拷贝, 每行 12 KiB; UB 峰值 ≈ 24.6 KiB, 远低于容量。"},
+s4:{conf:"exact",slots:[["unitBuf (single_n 变体)","TBuf",1,"195584"]],
+    other:"—",note:"插件 Exact: tilingkey=33 (bf16·single-N) 时仅分配 unitBuf=195584 B=(192−1)×1024 — 内核约定整 UB 预留; 910B 恰余 1 KiB, 950 余 56 KiB。tiling.ubSize 为内核预算, 非溢出门限。"},
+b1:{conf:"exact",slots:[["inQueueX","TQue",1,"6144*2"],["inQueueGamma","TQue",1,"6144*2"],["outQueueY","TQue",1,"6144*2"],["outQueueRstd","TQue",1,"8*4"],["xFp32Buf","TBuf",1,"6144*4"],["sqxBuf","TBuf",1,"6144*4"],["reduceFp32Buf","TBuf",1,"64*4"]],
+    other:"—",note:"插件 Exact (add_rms_norm mode0, ubFactor=6144 整行驻留): ≈86 KiB; bf16→fp32 中间展开 (xFp32/sqx 24 KiB×2) 是大头。若 dispatch 到 single_n 变体 (tilingkey 33) 则为 unitBuf 195584 B。BUFFER_NUM=1 (rms_norm_base.h 约定)。"},
+b2:{conf:"exact",slots:[["inQueue_ (bf16)","TQue",2,"192*32*2"],["outQueue_ (fp8)","TQue",2,"192*32"],["mxScaleQueue_","TQue",2,"192"],["maxExpBuffer_","TBuf",1,"192*2"],["recipScaleBuffer_","TBuf",1,"192*2"]],
+    other:"—",note:"插件 Exact: maxUbBlockNum=192 (整行 6144→192 个 32 元素块) 时 ≈37 KiB; 总量 ≈132 B/块 × 块数, 与 M 无关 (按块切核)。e8m0 倒数表 (recip) 常驻 UB 免重复计算。"},
+b3:{conf:"heuristic",slots:[["A tile (fp8, UB→L1 暂存)","TBuf",1,"16*512"],["scaleA/scaleW (e8m0 tile)","TBuf",1,"16*192+64*192"],["outQueue (bf16 落 GM)","TQue",2,"16*2048*2"]],
+    other:"L1 512 KiB: W NZ 分形 tile 转载; L0A/L0B 各 64 KiB: mmad 操作数 (A8W8 直喂); L0C 256 KiB: fp32 累加 (Mtile×Ntile), K=6144 需分批累加。",
+    note:"≈83 KiB (Mtile=16 典型 tiling) — 权重不驻留 UB, 走 GM→L1→L0B; M=8 时按 N=2048 摊 24 核, 单核 UB 压力小。精确布局需 UB 插件 (cube 类暂为 heuristic)。"},
+b4:{conf:"heuristic",slots:[["x 行 (fp32)","TQue",2,"2048*4"],["gamma","TBuf",1,"2048*2"],["y (fp8)","TQue",1,"2048"],["scale (e8m0)","TQue",1,"64"],["sqx 工作区","TBuf",1,"2048*4"]],
+    other:"—",note:"≈30 KiB (K=2048 单行驻留); norm+quant 融合使中间结果零 HBM 往返, UB 内一次完成归约→仿射→e8m0 打包。"},
+b5:{conf:"heuristic",slots:[["A tile (fp8)","TBuf",1,"16*512"],["scaleA/scaleW","TBuf",1,"16*64+512*64"],["outQueue (fp32)","TQue",2,"16*512*4"]],
+    other:"L1 512 KiB: W NZ (16384×2048) 分形流水装载; L0A/L0B 64 KiB; L0C 256 KiB fp32 累加。",
+    note:"≈74 KiB (Mtile=16, Ntile=512); 大 N GEMM 靠 N 维分块流水, UB 占用与 Ntile 选择线性相关。"},
+b6:{conf:"conservative",slots:[["q_b tile (bf16)","TQue",2,"16*256*2"],["w_kc tile (bf16, 经 L1)","TBuf",1,"16*192*2"],["rope sin/cos","TBuf",1,"16*64*2*2"],["out tile (576 bf16)","TQue",2,"16*576*2"]],
+    other:"L1: w_kc 分形装载 (12.6 MiB 全量在 GM); L0A/L0B: 吸收 GEMM; L0C: fp32 累加。rope 段在 Vec 完成。",
+    note:"unknown_ub(conservative, MIX 无插件) — 估算 ≈68 KiB (Mtile=16): Cube 段与 Vec(rope) 段共用 UB 需分段复用, 融合收益即省去中间 tile 落 GM。"},
+b7:{conf:"heuristic",slots:[["A tile (fp8)","TBuf",1,"16*512"],["scaleA/scaleW","TBuf",1,"16*192+18*192"],["outQueue (fp32)","TQue",2,"16*576*4"]],
+    other:"L1/L0A/L0B/L0C 同 matmul_mxfp8 常规布局。",
+    note:"≈78 KiB (Mtile=16); 小 N GEMM, 与 q_a_proj 共享同一份 A8 — 可合并调度减少 UB 换入换出。"},
+b8:{conf:"heuristic",slots:[["x 行 (fp32)","TQue",2,"576*4"],["gamma","TBuf",1,"512*2"],["sin/cos 行","TBuf",1,"64*2*2"],["cache 行 (写)","TQue",1,"656"],["slot idx","TBuf",1,"8"]],
+    other:"—",note:"≈11 KiB — 按 token 行流水, UB 压力极小; norm 段 (前 512) 与 rope 段 (后 64) 在行内分段复用同一缓冲; 原地 scatter 从 UB 直写 GM cache 行 (656 B/行)。"},
+kcache:{conf:"conservative",slots:[],other:"GM 常驻 (HBM), 不占 UB。",note:"分页 cache 全量在 HBM; kernel 仅按行/页经 UB 搬运。"},
+b9:{conf:"heuristic",slots:[["A tile (fp8)","TBuf",1,"16*512"],["scaleA/scaleW","TBuf",1,"16*64+128*64"],["outQueue (fp32)","TQue",2,"16*512*4"]],
+    other:"L1: colmajor W (4096×2048) tile 流水。",note:"≈74 KiB (Mtile=16); 与 q_b_proj 同构。"},
+b10:{conf:"heuristic",slots:[["x 行 (fp32)","TQue",2,"128*4"],["cos/sin 行","TBuf",1,"128*2*2"],["fp8 out","TQue",1,"128"],["row scale (fp32)","TBuf",1,"4"]],
+    other:"—",note:"<2 KiB — 128 维微核流水; dynamic_quant_v2 per-row scale 在 UB 内归约得出。"},
+b12:{conf:"heuristic",slots:[["A tile (bf16, 8×6144)","TBuf",1,"8*6144*2"],["outQueue","TQue",2,"8*128*2"]],
+    other:"L1 512 KiB: W (128×6144, 1.5 MiB) 分形流水。",note:"≈100 KiB — A 整块若驻 UB 占一半容量, 实际 tiling 会按 M/MTile 分片或经 L1 装载; 极小 GEMM, 以 M 摊核。"},
+b13:{conf:"heuristic",slots:[["x 行 (fp32)","TQue",2,"128*4"],["gamma/beta","TBuf",1,"128*4*2"],["mean/rstd","TBuf",1,"8*4"]],
+    other:"—",note:"<2 KiB; 128 点归约单报文完成。"},
+b14:{conf:"heuristic",slots:[["x 行 (fp32)","TQue",2,"128*4"],["cos/sin 行","TBuf",1,"128*2*2"],["fp8 out","TQue",1,"128"],["row scale","TBuf",1,"4"]],
+    other:"—",note:"<2 KiB。"},
+b15:{conf:"heuristic",slots:[["updates tile (fp8)","TQue",2,"128"],["indices","TBuf",1,"8*8"],["scale updates","TQue",1,"32"]],
+    other:"目标 buffer 在 GM, 原地写; UB 仅暂存本步 updates。",note:"<1 KiB; 两次 scatter (fp8 + fp32 scale) 各自独立流水。"},
+idxbuf:{conf:"conservative",slots:[],other:"GM 常驻, 不占 UB。",note:"跨层共享的 K 缓冲在 HBM; indexer 经 UB/L1 分页读取。"},
+b16:{conf:"heuristic",slots:[["A tile (bf16)","TBuf",1,"8*6144*2"],["outQueue","TQue",2,"8*32*2"]],
+    other:"L1: W (32×6144, 0.38 MiB) 可整体驻留 L1。",note:"≈100 KiB — 与 wk 同为 A 大/N 小 GEMM; N=32 极小, 实际收益靠与 wk/weights_proj 合核。"},
+b17:{conf:"conservative",slots:[["q tile (Bq×32×128 fp8)","TQue",2,"16*32*128"],["k 页 (128×128 fp8)","TBuf",1,"128*128"],["scores tile (fp32)","TBuf",1,"16*128*4"],["top-k 工作区","TBuf",1,"1024*8"]],
+    other:"q·k 点积走 Cube (L0A/L0B); 加权归约与 top-2048 选择走 Vec; KV 页经 block_tables 从 GM/L1 流入。",
+    note:"unknown_ub(conservative) — 估算 ≈39 KiB (Bq=16): KV 全量 (2.1 MiB) 永不整体驻留, UB 中仅当前页; top-k 用 UB 内部分排序, 峰值随 sparse_count=2048 线性。"},
+b18:{conf:"conservative",slots:[["q tile (Sblock×576 bf16)","TQue",2,"32*576*2"],["行内 topk 索引","TBuf",1,"2048*4"],["softmax m/l/o (fp32)","TBuf",1,"32*12"],["kv dequant scale 页","TBuf",1,"128*2"]],
+    other:"L1 512 KiB: paged KV block (128×656 B ≈ 83 KiB/页) 预取双缓冲; L0A/L0B: q·kᵀ 与 P·V mmad; L0C 256 KiB: O 累加 (Sblock×512 fp32 → 溢出则分 V 块)。",
+    note:"unknown_ub(conservative) — 估算 ≈83 KiB (Sblock=32); L0C 压力大于 UB: Sblock×512×4B=64 KiB, 接近 L0C 一半。稀疏 top-2048 使 KV 装载集合固定, UB/L1 均可静态预算。"},
+b19:{conf:"heuristic",slots:[["A tile (bf16)","TBuf",1,"16*512"],["w_vc tile (经 L1)","TBuf",1,"512*256*2/64"],["outQueue","TQue",2,"16*256*2"]],
+    other:"L1: w_vc (16.8 MiB) 分形流水; L0A/L0B 64 KiB; L0C: fp32 累加 (16×256)。",
+    note:"≈50 KiB (Mtile=16); batched GEMM 按 64 组摊核, 单核 UB 压力小。"},
+b20:{conf:"exact",slots:[["inQueue_ (bf16)","TQue",2,"512*32*2"],["outQueue_ (fp8)","TQue",2,"512*32"],["mxScaleQueue_","TQue",2,"512"],["maxExpBuffer_","TBuf",1,"512*2"],["recipScaleBuffer_","TBuf",1,"512*2"]],
+    other:"—",note:"插件 Exact: 行宽 16384→512 块, ≈66 KiB — 按 K 维分核时块数更少; 与 b2 同一内核不同 tiling。"},
+b21:{conf:"heuristic",slots:[["A tile (fp8)","TBuf",1,"16*1024"],["scaleA/scaleW","TBuf",1,"16*512+512*512"],["outQueue (bf16)","TQue",2,"16*512*2"]],
+    other:"L1 512 KiB: W colmajor (100.7 MiB) 分形流水 — 本算子 L1 带宽压力全层最大; L0C: fp32 累加。",
+    note:"≈116 KiB (Mtile=16, Ktile=1024) — K=16384 深累加, L0C 分批回写; UB 主要消耗在 scale tile (512 块/行)。"},
+b22:{conf:"heuristic",slots:[["ring chunk (收/发各一)","TQue",2,"16384"],["同步 flag","TBuf",1,"128"]],
+    other:"对端缓冲在 rank 间 shmem (GM 映射), 不占 UB; shmem_buf 由框架 pool (ShmemRecyclable) 分配。",
+    note:"分块 ring 流水: chunk 16 KiB ×2; UB 占用恒定, 与消息总量 (M=8 时 96 KiB) 无关; 全量分 6 chunk 传递。"},
+b23:{conf:"exact",slots:[["inQueueX","TQue",1,"6144*2"],["inQueueGamma","TQue",1,"6144*2"],["outQueueY","TQue",1,"6144*2"],["outQueueRstd","TQue",1,"8*4"],["xFp32Buf","TBuf",1,"6144*4"],["sqxBuf","TBuf",1,"6144*4"],["reduceFp32Buf","TBuf",1,"64*4"]],
+    other:"—",note:"插件 Exact, 同 b1 (mode0 ≈86 KiB / single_n 195584 B 二选一, 由 tilingkey dispatch)。每层两次 add_rms_norm, UB 布局相同。"},
+c1:{conf:"heuristic",slots:[["A tile (bf16)","TBuf",1,"8*1024*2"],["outQueue","TQue",2,"8*256*2"]],
+    other:"L1: W (3 MiB) 分形流水; L0A/L0B/L0C 常规。",note:"≈36 KiB; 小 N GEMM, UB 压力可忽略。"},
+c2:{conf:"heuristic",slots:[["logits 行 tile (fp32)","TQue",2,"8*256*4"],["workspace 行","TBuf",1,"8*256*4"],["bias","TBuf",1,"256*4"],["topk out (w+idx)","TQue",1,"8*8*8"]],
+    other:"—",note:"≈26 KiB (rowFactor=8): 256 点 sigmoid + bias 校正 + top-8 部分排序全部在 UB 内; norm_out 全宽输出按需写 GM。"},
+c3:{conf:"heuristic",slots:[["计数桶 [256]","TBuf",1,"256*4"],["排序对 (token,expert)","TBuf",1,"M*8*8"],["row_idx out","TQue",1,"M*8*4"]],
+    other:"—",note:"≈4 KiB (M=8): counting sort 桶+对; 占用由 num_experts=256 决定, 与 M 弱相关。"},
+c4:{conf:"heuristic",slots:[["x 行 (bf16)","TQue",2,"6144*2"],["expanded 行 (fp8)","TQue",2,"6144"],["scale 行 (e8m0)","TQue",1,"192*2"],["路由索引","TBuf",1,"M*8*4"]],
+    other:"—",note:"≈37 KiB (单行流水): gather 重排 + MX 量化在 UB 内一次完成, 中间零落 GM; 输出按 expert 聚簇写 GM 供 grouped matmul 顺序读。"},
+c5:{conf:"heuristic",slots:[["row_idx tile","TQue",2,"256*4"]],other:"—",note:"≈2 KiB; 逐元素。"},
+c6:{conf:"heuristic",slots:[["counts (256)","TBuf",1,"256*4"],["active out","TQue",1,"257*4"]],other:"—",note:"≈2 KiB; scan+压缩。"},
+c7:{conf:"heuristic",slots:[["counts (256)","TQue",2,"256*4"],["cumsum out","TQue",1,"256*4"]],other:"—",note:"≈3 KiB; 单报文 256 点 scan。"},
+c8:{conf:"conservative",slots:[["A tile (fp8)","TBuf",1,"64*512"],["scale_a tile","TBuf",1,"64*16"],["scale_b tile","TBuf",1,"256*16"],["out tile (bf16)","TQue",2,"64*256*2"]],
+    other:"FP4 权重: GM→L1 (512 KiB 分形 tile)→Vec 解包→L0B (64 KiB); L0C 256 KiB: fp32 累加 (64×256=64 KiB, 余量充足); tile_n=256 保证 out tile 驻留。",
+    note:"unknown_ub(conservative, MIX 无插件) — 估算 ≈103 KiB (Mtile=64): FP4→FP8 解包缓冲是 W4A8 特有开销, 位于 L1/UB 边界; 专家级 tiling 使空专家零 UB 流量。"},
+c9:{conf:"heuristic",slots:[["y 行 (gate|up bf16)","TQue",2,"4096*2"],["gate/up 半片 (fp32)","TBuf",1,"2048*4"],["fp8 out","TQue",1,"2048"],["origin bf16","TQue",1,"2048*2"],["scale (e8m0)","TQue",1,"32*2"]],
+    other:"—",note:"≈30 KiB (单行): silu·mul + MX 量化 + bf16 副本三路输出均在 UB 内完成; 组边界由 group_list 决定, 行间无跨组累积。"},
+c10:{conf:"conservative",slots:[["A tile (fp8)","TBuf",1,"32*512"],["scale_a/scale_b tile","TBuf",1,"32*8+512*8"],["out tile (bf16)","TQue",2,"32*256*2"]],
+    other:"FP4 权重经 L1 解包→L0B; L0C fp32 累加 (32×256)。",
+    note:"unknown_ub(conservative) — 估算 ≈58 KiB (Mtile=32); K=2048 较浅, L0C 单批可容纳。"},
+c11:{conf:"heuristic",slots:[["累加目标行 (bf16)","TBuf",1,"6144*2"],["贡献行 (流式)","TQue",2,"6144*2"],["topk 权重","TBuf",1,"8*4"],["scatter idx","TBuf",1,"M*8*4"]],
+    other:"64 MiB user_ws 在 GM (workspace), 不占 UB。",note:"≈37 KiB: 每 token ≤8 条专家行顺序 scatter-累加; UB 内单目标行驻留, 贡献行流式进。"},
+s1m:{conf:"exact",slots:[["inQueue_","TQue",2,"192*32*2"],["outQueue_","TQue",2,"192*32"],["mxScaleQueue_","TQue",2,"192"],["maxExpBuffer_","TBuf",1,"192*2"],["recipScaleBuffer_","TBuf",1,"192*2"]],
+    other:"—",note:"插件 Exact, 同 b2 (≈37 KiB)。共享专家与路由分支并行, 两份 dynamic_mx_quant 各自独立核上执行。"},
+s2m:{conf:"heuristic",slots:[["A tile (fp8)","TBuf",1,"16*512"],["scaleA/scaleW","TBuf",1,"16*192+256*192"],["outQueue (bf16)","TQue",2,"16*512*2"]],
+    other:"FP4 权重 [6144×4096] 经 L1 解包; L0C fp32 累加。",note:"≈116 KiB (Mtile=16); upGate=true 输出 N×2 由 tiling 吸收。"},
+s3m:{conf:"heuristic",slots:[["y 行 (bf16)","TQue",2,"4096*2"],["gate/up 半片","TBuf",1,"2048*4"],["fp8 out","TQue",1,"2048"],["origin","TQue",1,"2048*2"],["scale","TQue",1,"64"]],
+    other:"—",note:"≈30 KiB; 单组退化 (group_list=[M]), 其余同 c9。"},
+s4m:{conf:"heuristic",slots:[["A tile (fp8)","TBuf",1,"16*512"],["scaleA/scaleW","TBuf",1,"16*64+384*64"],["outQueue","TQue",2,"16*512*2"]],
+    other:"FP4 权重 [2048×6144] 经 L1; L0C 累加。",note:"≈78 KiB (Mtile=16)。"},
+d1:{conf:"exact",slots:[["inQueue_","TQue",2,"192*32*2"],["outQueue_","TQue",2,"192*32"],["mxScaleQueue_","TQue",2,"192"],["maxExpBuffer_","TBuf",1,"192*2"],["recipScaleBuffer_","TBuf",1,"192*2"]],
+    other:"—",note:"插件 Exact, 同 b2 (≈37 KiB)。"},
+d2:{conf:"heuristic",slots:[["A tile (fp8)","TBuf",1,"16*512"],["scaleA/scaleW","TBuf",1,"16*192+768*192"],["outQueue (bf16)","TQue",2,"16*1024*2"]],
+    other:"FP4 W [6144×24576] GM→L1 分形流水 (75.5 MiB, N/TP 切分); L0C fp32 累加分批。",
+    note:"≈172 KiB (Mtile=16, Ntile=1024) — Dense 层大 N 使 out tile 与 scale tile 变大, 910B 下需 Ntile≤768; TP=2 时减半。"},
+d3:{conf:"heuristic",slots:[["y 行 (24576 bf16)","TQue",2,"24576*2"],["act out","TQue",1,"12288*2"]],
+    other:"—",note:"≈96 KiB (整行) — 中间维 12288×2 是全图最大单行 vec 缓冲; ubFactor<12288 时分片流水, 精确占用取决于 tiling.ubFactor。这是 Dense 分支 UB 预算的关键点。"},
+d4:{conf:"exact",slots:[["inQueue_","TQue",2,"384*32*2"],["outQueue_","TQue",2,"384*32"],["mxScaleQueue_","TQue",2,"384"],["maxExpBuffer_","TBuf",1,"384*2"],["recipScaleBuffer_","TBuf",1,"384*2"]],
+    other:"—",note:"插件 Exact: 行宽 12288→384 块, ≈50 KiB (ubFactor 按行分片时更小)。"},
+d5:{conf:"heuristic",slots:[["A tile (fp8)","TBuf",1,"16*512"],["scaleA/scaleW","TBuf",1,"16*384+384*384"],["outQueue","TQue",2,"16*512*2"]],
+    other:"FP4 W [12288×6144] 经 L1; row-parallel K/TP 切分。",note:"≈100 KiB (Mtile=16)。"},
+d6:{conf:"heuristic",slots:[["ring chunk","TQue",2,"16384"],["同步 flag","TBuf",1,"128"]],
+    other:"shmem 缓冲在 GM 映射区。",note:"同 b22; 每层共 2 次 all_reduce (attn+mlp), UB 布局相同。"},
+};
+
+/* ============================ 图布局 ============================ */
+/* ============================ 数学原理与作用 ============================ */
+const MATH = {
+s1:{role:"把离散 token id 映射到 H=6144 维连续语义空间, 是网络唯一的信息入口; 输出与所有层共享的 residual 流共同构成 Pre-LN 残差主干。",
+    math:"<span class='mono'>hidden[m,:] = E[id_m],  E ∈ ℝ^{V×H}</span><br>纯查表 (gather), 无乘加: 第 m 行输出 = 权重矩阵第 <span class='mono'>id_m</span> 行。"},
+s2:{role:"前 3 层使用稠密 FFN: 小模型 warm-up 的常规配置 (DeepSeek 系惯例 first_k_dense_replace=3), 稳定早期训练/推理特征; 本仓测试权重为 W4A8 量化版。",
+    math:"见 ④ Dense MLP: <span class='mono'>F(x) = W_down·(silu(W_gate·x) ⊙ W_up·x)</span>"},
+s3:{role:"第 3 层起 MoE: 以 top-8/256 的稀疏激活换取大参数量 (每层路由专家 ≈5.1 GiB), 而 per-token 计算量只相当于 8+1 个 expert_ffn=2048 的 MLP。",
+    math:"见 ③ MoE: <span class='mono'>out = Shared(x) + Σ_{e∈top8} p_e · Expert_e(x)</span>"},
+s4:{role:"模型出口归一化, 把残差流尺度拉回单位方差后交给 lm_head; 残差在此被丢弃 (只取 normed)。",
+    math:"<span class='mono'>y = x̂ ⊙ γ,  x̂ = x / RMS(x),  RMS(x) = √(mean(x²) + ε)</span><br>以幅值均值代替方差 (无均值中心化), γ 为逐通道增益, ε=1e-5。"},
+s5:{role:"把 final norm 后的隐状态映射回 154,880 维词表, 产生下一 token 的分布; 采样 (argmax/top-p) 在本图之外。",
+    math:"<span class='mono'>logits = x·Wᵀ,  W ∈ ℝ^{V×H}</span> (column-major 存储, 即按 Wᵀ 布局)<br>TP 列并行: 每 rank 计算 <span class='mono'>V/TP</span> 列 → <span class='mono'>all_gather(dim=1)</span> 拼接, 通信量 M×V/TP×2B。"},
+b1:{role:"Pre-LN 结构的入口归一化: 保证每层输入分布稳定; 同时维护 residual 流 — 注意力/MLP 的输出都通过「残差相加」进入主干, 提供恒等通路。",
+    math:"L0: <span class='mono'>y = RMSNorm(x),  r₀ = x</span><br>L≥1: <span class='mono'>r = x + r_prev;  y = RMSNorm(r)</span> (add_rms_norm 融合)<br><span class='mono'>RMSNorm(x) = x / √(mean(x²)+ε) ⊙ γ</span> — 相对 LayerNorm 省去均值与 bias, 归一化只除幅值。"},
+b2:{role:"把激活从 BF16 (2B) 压到 FP8 E4M3 (1B), 使后续矩阵乘走 FP8 Cube 单元、激活读取带宽减半; 是 A8W8 (注意力) 与 W4A8 (MLP) 两条量化路径共用的入口。",
+    math:"按 32 元素块 (MX 微缩块):<br><span class='mono'>s_block = 2^⌈log₂ max|x_block|⌉</span> (E8M0, 2 的幂)<br><span class='mono'>x̃ = round_to_fp8(x / s_block)</span><br>反量化 <span class='mono'>x ≈ x̃ · s_block</span> — scale 为 2 的幂, dequant 只需指数移位, 无乘法; 符合 OCP MX 标准。两个 e8m0 打包进 1 byte → scale 形如 [M, 块/2, 2]。"},
+b3:{role:"MLA 的 Q 低秩压缩第一段: 6144 → 2048。把「直接投影到 64 头×256」拆成低秩两级, 参数量 100.7M → 46M, 更重要的是配合 KV 压缩 (见 kv_a) 构成 MLA 整体。",
+    math:"<span class='mono'>q_a = x · W_aᵀ,  W_a ∈ ℝ^{2048×6144}</span><br>MXFP8 乘: <span class='mono'>q_a ≈ (x̃ ⊙ s_x) · (W̃ ⊙ s_w)ᵀ</span>, 逐块 scale 在累加前应用。"},
+b4:{role:"对低秩 Q 做归一化并直接产出 FP8 — 一份数据同时供 q_b_proj 与 DSA indexer 的 wq_b 使用, 融合省一次往返。",
+    math:"<span class='mono'>q_a' = RMSNorm(q_a) ⊙ γ</span>, 再按 b2 的 32 元素块 MX 规则量化为 <span class='mono'>(x̃, s)</span>。"},
+b5:{role:"Q 低秩压缩第二段: 从共享的 2048 维 latent 恢复出 64 头 × 256 维 (192 nope + 64 rope) 的完整 Q。",
+    math:"<span class='mono'>q = q_a' · W_bᵀ,  W_b ∈ ℝ^{16384×2048}</span> (每头 256 维)。TP 下头维切分: <span class='mono'>16384/TP</span>。"},
+b6:{role:"MLA 权重吸收的关键一步: 把「Q 的 nope 分量先变回头空间再与 K 做点积」改写为「先投影到 KV latent 空间」, 从而注意力可以直接在 512 维 latent 上进行 — 这是 MLA 能用 512+64 维 KV cache 的前提。RoPE 分量不参与吸收 (位置相关), 单独旋转后拼接。",
+    math:"吸收: <span class='mono'>q_abs[h] = q̃[h] · W_kc[h],  W_kc[h] ∈ ℝ^{192×512}</span><br>即 <span class='mono'>⟨q_nope, k_nope⟩ = ⟨q̃·W_kc, c_kv⟩</span> — 把 K 侧的 W_ukᶜ 吸收到 Q 侧<br>RoPE: 对 rope 分量按位置 m, 频率 <span class='mono'>θⱼ = base^(−2j/64)</span>:<br><span class='mono'>(q₁,q₂) → (q₁cos mθ − q₂sin mθ,  q₁sin mθ + q₂cos mθ)</span><br>输出 <span class='mono'>[q_abs 512 | q_rope 64] = 576 维/头</span>。"},
+b7:{role:"KV 压缩投影 (MQA 式): 所有 64 头共享一份 512 维 KV latent + 64 维 rope K。KV cache 每 token 每层只存 576 B (fp8), 相比 MHA (64头×576维) 缩小约 26× — MLA 显存优势的直接来源。",
+    math:"<span class='mono'>c_kv = x · W_kvᵀ ∈ ℝ^{512}</span> (共享 latent)<br><span class='mono'>k_rope = x · W_rᵀ ∈ ℝ^{64}</span> (MQA rope K)<br>两者由同一矩阵 <span class='mono'>W ∈ ℝ^{576×6144}</span> 一次算出。"},
+b8:{role:"生成本步 KV 并落盘: latent 部分归一化、rope 部分旋转后按 slot 写入分页 cache; 输出的 cache 视图直接作为后续注意力的 K/V (K=V 同源, latent 空间)。三算子融合 (norm/rope/scatter) 是 decode 路径热区。",
+    math:"<span class='mono'>c̃ = c_kv / RMS(c_kv) ⊙ γ</span><br><span class='mono'>k' = RoPE(k_rope, m)</span> (同 b6 公式)<br><span class='mono'>k_cache[slot_m] = quant_fp8([c̃ | k'])</span> — 写 656 B/行 (576+80 对齐 tile)。"},
+b9:{role:"DSA indexer 的 Q 投影: 从共享的 q_lora 生成 32 个 128 维轻量索引头。indexer 与主注意力共享 q_a (b4 的输出), 不重复低秩计算。",
+    math:"<span class='mono'>q_idx = q_a' · W_bᵢₙ𝑑ᵉˣᵀ,  W ∈ ℝ^{4096×2048}</span> (32 头 × 128 维)。"},
+b10:{role:"索引 Q 的位置对齐与定点化: indexer 的打分需要与 K 一样带位置信息, 且 fp8 定点乘可走高性能路径。",
+    math:"RoPE 同 b6 (128 维频率, index 独立的 cos/sin cache);<br>dynamic_quant_v2 (per-row, 非 MX): <span class='mono'>s = max|x_row|/448,  x̃ = round(x/s)</span> — 逐行一个 fp32 scale。"},
+b12:{role:"索引 K 的线性投影: 把隐状态映到 128 维索引空间 (单头 MQA, 所有 query token 共享同一组历史 K)。",
+    math:"<span class='mono'>k_idx = x · W_kᵀ,  W ∈ ℝ^{128×6144}</span> (bf16)。"},
+b13:{role:"索引 K 的分布归一 (checkpoint 训练时的配置): 注意这里用的是含均值/beta 的 LayerNorm 而非 RMSNorm。",
+    math:"<span class='mono'>y = (x − μ)/√(σ² + ε) ⊙ γ + β</span>, <span class='mono'>μ = mean(x), σ² = var(x)</span> — 与 RMSNorm 的差别: 中心化 + 平移自由度 β。"},
+b14:{role:"索引 K 的位置对齐与量化, 与 b10 对偶; 结果写入跨层共享的 K buffer。",
+    math:"同 b10: RoPE(128 维) + per-row FP8 量化。"},
+b15:{role:"维护 indexer 的全局 K 缓冲: 每步 decode 把当前 token 的索引 K/scale 写入固定 slot, 供所有层 (含未来步) 读取。K 不随层变化 — 一次写入、多层复用是 DSA 摊销的基础。",
+    math:"<span class='mono'>buffer[slot_m] = k̃_m;  scale_buf[slot_m] = s_m</span> — 原地 scatter, 返回同 storage 视图。DAG 中显式建边保证写后读序。"},
+idxbuf:{role:"indexer 的「小型 KV cache」: 只存 128 维 fp8 索引 K (主注意力 cache 的 1/5), 全层共享, 使每 4 层一次的全量打分成本极低。",
+    math:"逻辑布局 <span class='mono'>[-1, 128, 1, 128]</span> = [页×行, 头1, 1, 维度], 与主 KV cache 相同的 PA 分页思路。"},
+b16:{role:"产生 32 个索引头的头间聚合权重: 打分时不是简单平均, 而是学习到的加权求和。",
+    math:"<span class='mono'>w = x · W_pᵀ,  W ∈ ℝ^{32×6144}</span> (bf16)。"},
+b17:{role:"DSA 的核心「路由器」: 为每个 query token 从全部历史 KV 中选出 top-2048, 把主注意力的 O(L) 复杂度降为常数。打分用 128 维小头 + fp8 定点乘, 成本远低于主注意力; 且每 4 层才重算一次 (其余层透传, 见 skipnote)。",
+    math:"token t 的相关性分数 (对 32 头加权求和):<br><span class='mono'>s_t = Σ_h w_h · ⟨q̃_h, k̃_t⟩ / (s_q · s_k)</span> (fp8 乘, scale 提出后再加权)<br><span class='mono'>I = TopK({s_t}, 2048)</span> — 输出 int32 索引, sparse_mode=3 处理左 padding。"},
+skipnote:{role:"DSA 跨层摊销: indexer 只在部分层运行, 其余层假设「top-2048 的选择在相邻层间近似不变」直接复用 — 这是 DeepSeek-V3.2 DSA 的核心省算力设计。",
+    math:"重算条件: <span class='mono'>max(l − 2, 0) mod 4 = 0</span> → 本 10 层配置中 L0/L1/L2/L6 全量计算, 其余 6 层透传 (省 60% indexer 开销)。"},
+b18:{role:"稀疏注意力的执行核心: 只对 indexer 选出的 ≤2048 个 KV token 做注意力, 使长上下文的注意力计算/访存近似常数 (top-2048 vs 数十万 ctx)。在 latent 空间完成计算, 输出 512 维/头。",
+    math:"标准 scaled dot-product 限制在索引集 I 上:<br><span class='mono'>O = softmax( (Q K_Iᵀ)/√d + mask ) · V_I</span><br>分数 = latent 点积 + rope 点积: <span class='mono'>⟨q_lat, k_lat⟩ + ⟨q_rope, k_rope⟩</span><br>Flash 在线 softmax: <span class='mono'>mⁿᵉʷ = max(m, mᵢ);  l ← l·e^{m−mⁿᵉʷ} + Σe^{sᵢ−mⁿᵉʷ};  O ← O·e^{m−mⁿᵉʷ} + P·V</span> — 分块遍历不需全量 mask。<br>K/V 同源 (都是 fp8 latent cache), scale_value=1.0 (scale 已含于量化)。"},
+b19:{role:"V 逆变换 (与 b6 的吸收对偶): 注意力在 512 维 latent 空间完成, 输出需经 w_vc 映射回 256 维 v_head 空间才能拼接/输出投影。kv_b_proj 因此被拆成 w_kc (Q 侧吸收) 与 w_vc (输出侧), 全程不显式参与注意力。",
+    math:"<span class='mono'>o_h = attn_h · W_vc[h],  W_vc[h] ∈ ℝ^{512×256}</span> (batched, 64 组)<br>源自 <span class='mono'>kv_b_proj ∈ ℝ^{(192+256)×512}</span> 按头切分取 v 段并转置。"},
+b20:{role:"为 o_proj 准备 A8 输入 (输出投影也是 A8W8); reshape [B,S,N,D]→[BS, N·D] 与量化相邻执行。",
+    math:"同 b2 的 32 元素块 MX 量化, 行宽 16384。"},
+b21:{role:"注意力出口: 混合 64 头信息并映射回模型维度 6144; 是 attention 段最大的单权重 (100.7 MiB/TP1), 也是该段耗时大头。",
+    math:"<span class='mono'>y = concat_h(o_h) · W_oᵀ,  W_o ∈ ℝ^{6144×16384}</span> (colmajor/trans_b 存储)。<br>TP: 头维切分 → 各 rank 部分和 → all_reduce。"},
+b22:{role:"TP 切分的归并: o_proj 按头维切分后每 rank 只有部分和, 需跨 rank 求和才能与 residual 相加。",
+    math:"<span class='mono'>x = Σ_rank x_rank</span>, ring 实现 = reduce-scatter + all-gather 两阶段; 每步收发 chunk 16 KiB, 通信量 <span class='mono'>2(TP−1)/TP × M×H×2B</span>。"},
+b23:{role:"注意力子层出口归一化: attn_out 加回 residual (主干更新), 再归一化产出 MLP 输入。与 b1 同一内核, 每层两次。",
+    math:"<span class='mono'>r = r_prev + attn_out;  y = RMSNorm(r) ⊙ γ</span>。"},
+c1:{role:"MoE 路由打分: 为每 token 计算对 256 个专家的匹配度, 是稀疏激活的唯一决策点 (25 MFLOP 决定 3.2 GFLOP 花在哪)。",
+    math:"<span class='mono'>logits = x · W_gᵀ,  W_g ∈ ℝ^{256×6144}</span> (bf16, 与专家权重同精度以保路由质量)。"},
+c2:{role:"稀疏激活决策: sigmoid 打分 + bias 校正选择 + 归一化加权。noaux_tc 的关键设计 — bias 只参与「选谁」不参与「加权多少」, 防止专家因权重偏置退化 (DeepSeek 负载均衡方法)。",
+    math:"打分: <span class='mono'>g_e = σ(logit_e) = 1/(1+e^{−logit_e})</span><br>选择: <span class='mono'>top8 = TopK_e(logit_e + b_e)</span> (bias 仅用于排序)<br>权重: <span class='mono'>p_e = g_e / Σ_{e'∈top8} g_{e'}</span> (norm_topk_prob), 输出缩放 2.5 在 finalize 侧生效。"},
+c3:{role:"把 top-8 路由展开成「专家主序」的执行计划: 计数排序确定每个专家处理哪些行, 是 grouped GEMM 的分组依据。",
+    math:"counting sort: <span class='mono'>count_e = |{ (m,k): idx[m,k]=e }|</span>;<br><span class='mono'>row(m,k) = offset_{idx[m,k]} + k'</span> — token 行到展开行的置换。"},
+c4:{role:"执行重排: token 隐状态按专家聚簇复制 (每 token 复制 8 份), 并顺带完成 MX 量化 — grouped GEMM 需要 A8 输入, 单独量化再 gather 会多一次全量读写。",
+    math:"<span class='mono'>expanded_x[G_{e−1}+j] = quant_mx(x_{m})</span>, 其中 j 遍历专家 e 收到的第 j 个 token; 输出 <span class='mono'>[M×8, 6144] fp8</span> + 逐块 e8m0 scale。"},
+c5:{role:"排序阶段用符号位标记填充/无效行, finalize scatter 前还原成非负行号 — 一个 1-cycle 逐元素算子, 换取排序 kernel 的实现简化。",
+    math:"<span class='mono'>out = |idx|</span>。"},
+c6:{role:"M 小 (decode) 时 256 个专家中绝大多数为空 (≤ min(M×8,256) 个活跃), 压缩出活跃表让 grouped GEMM 只调度非空专家 — decode 性能的关键, 权重读取从 3.22 GiB 降到活跃子集。",
+    math:"<span class='mono'>active = [n, e₁, e₂, …]: count_{eᵢ} > 0</span> — 首元素为活跃数, 供 kernel 前缀调度。"},
+c7:{role:"生成 grouped GEMM 的行边界 (group_list): 每个专家在 expanded 行中的结束偏移, kernel 据此切分 M 维。",
+    math:"<span class='mono'>G_e = Σ_{i≤e} count_i</span> (前缀和)。<br>与 c6 消费同一计数向量, 无数据依赖 — DAG 中并行执行。"},
+c8:{role:"MoE 主体计算一: 所有专家的 gate/up 融合 GEMM。按专家分组后, 256 个独立的 [6144→4096] GEMM 在单 kernel 内批量完成 (gate/up 拼接成一个矩阵乘), FP4 权重使 HBM 读取减半。",
+    math:"对展开行 r (属专家 e(r)):<br><span class='mono'>y[r] = (x̃_r ⊙ s_a,r) · (W̃_{e(r)} ⊙ s_{W,e})ᵀ</span><br><span class='mono'>W_{e} ∈ ℝ^{4096×6144}</span> (gate|up 拼接), FP4 E2M1 + e8m0 块 scale dequant; tile_n=256 切 N 维。同时回传 ready_expert 维持专家级依赖链。"},
+c9:{role:"专家 FFN 的非线性段: SwiGLU 激活 + 为 down GEMM 量化, 融合执行; 按组边界处理, 组间无交叉。",
+    math:"<span class='mono'>act = silu(gate) ⊙ up,  silu(x) = x·σ(x) = x/(1+e^{−x})</span><br>再按 b2 规则 MX 量化为 (fp8, e8m0); 另存 bf16 origin 供高精度路径。"},
+c10:{role:"MoE 主体计算二: down 投影 [2048→6144], 与 c8 对称; 输出仍按专家聚簇, 待 finalize 归并。",
+    math:"<span class='mono'>y[r] = (act̃_r ⊙ s_a) · (W̃_{e(r)} ⊙ s_W)ᵀ,  W_e ∈ ℝ^{6144×2048}</span> (FP4)。"},
+c11:{role:"逆路由: 把散落在专家行的输出按原 token 位置 scatter-累加, 乘路由权重 — 完成稀疏 FFN 的最后一步。",
+    math:"<span class='mono'>x_out[m] = 2.5 · Σ_{k<8} p_{m,k} · expanded[row(m,k)]</span><br>(2.5 = routed_scaling_factor; skip1/skip2/bias 为空的退化参数, user_ws 64 MiB GM workspace 做分桶)。"},
+s1m:{role:"共享专家分支的入口量化 (与路由分支并行执行, 消费同一份 post-LN hidden)。",
+    math:"同 b2 (32 元素块 MX)。"},
+s2m:{role:"共享专家 gate/up: 全 token 必经的 1 个稠密专家 — 补偿路由稀疏性, 让通用知识走固定通路、专家只负责特化 (DeepSeek shared+experts 设计)。",
+    math:"<span class='mono'>y = (x̃ ⊙ s_a) · (W̃ ⊙ s_W)ᵀ,  W ∈ ℝ^{4096×6144}</span> (gate|up 拼接, FP4)。"},
+s3m:{role:"共享专家激活: 与 c9 同内核, 但路由退化为单组 (group_list=[M], expert_depend=[1])。",
+    math:"<span class='mono'>act = silu(gate) ⊙ up</span> + MX 量化, 同 c9。"},
+s4m:{role:"共享专家 down 投影, 输出与路由分支相加。",
+    math:"<span class='mono'>x_shared = (act̃ ⊙ s_a) · (W̃ ⊙ s_W)ᵀ,  W ∈ ℝ^{6144×2048}</span> (FP4)。"},
+c13:{role:"合并两条分支: 路由专家的稀疏输出 + 共享专家的全量输出。",
+    math:"<span class='mono'>x = x_routed + x_shared</span> (逐元素)。"},
+c14:{role:"MLP 段 TP 归并 (列/行并行的部分和), 与 b22 对称; 每层共两次 all_reduce, DAG 中可与后续计算重叠。",
+    math:"同 b22: <span class='mono'>x = Σ_rank x_rank</span> (ring shmem)。"},
+d1:{role:"Dense FFN 入口量化 (L0–L2)。",
+    math:"同 b2。"},
+d2:{role:"Dense FFN gate/up: 中间维 12288 (MoE 专家的 6 倍), gate/up 拼接为单矩阵乘; 列并行按 N 切分无通信。",
+    math:"<span class='mono'>y = (x̃ ⊙ s_a) · (W̃ ⊙ s_W)ᵀ,  W ∈ ℝ^{24576×6144}</span> (FP4, gate|up 拼接)。"},
+d3:{role:"Dense SwiGLU 激活 (无量化版, 输出 bf16 后单独量化 — 与 MoE 的融合版 c9 不同)。",
+    math:"<span class='mono'>act = silu(y[:, :12288]) ⊙ y[:, 12288:]</span> — 前后半切分, silu(x)=x·σ(x)。"},
+d4:{role:"down GEMM 前的中间激活量化。",
+    math:"同 b2, 行宽 12288。"},
+d5:{role:"Dense FFN down 投影, 行并行按 K/TP 切分, 输出部分和待归并。",
+    math:"<span class='mono'>out = (act̃ ⊙ s_a) · (W̃ ⊙ s_W)ᵀ,  W ∈ ℝ^{6144×12288}</span> (FP4)。"},
+d6:{role:"Dense 段 TP 归并。",
+    math:"同 b22。"},
+kcache:{role:"注意力跨步的记忆载体: 本层写、本层读 (K=V 同源), 与 indexer 的 K buffer 分离 (后者全层共享)。",
+    math:"逻辑寻址: <span class='mono'>token_t → cache[block_tables[t÷128], t mod 128]</span> — 两级页表把连续序列映射到物理块。"},
+};
+
+/* ============================ 权重输入分析 ============================ */
+const WGT = {
+s1:{w:[["E (embedding 表)","[V, H] 行主序","BF16","V*H*2"]],
+    note:"纯查表无 GEMM: 每 token 仅按行读取 1 行 (H×2B = 12 KiB); 整表常驻 HBM ≈1.77 GiB, 不随 M/TP 变化。"},
+s4:{w:[["γ (final norm 增益)","[H]","BF16","H*2"]],
+    note:"仅 12 KiB, 可忽略; 与 lm_head 权重读取相比是零头。"},
+s5:{w:[["W (lm_head)","[V/{TP}, H] 列主序 (col)","BF16","V*H*2/TP"]],
+    note:"TP 列并行切 V 维, 每 rank 持有 V/{TP} 行; decode 时即使只算 1 个 token 也要读整份权重 (权重瓶颈: AI ≈ 2M/1, 每 token 摊销 1.77 GiB/{TP}), 输出经 all_gather 拼接。"},
+b1:{w:[["γ (input_layernorm 增益)","[H]","BF16","H*2"]],
+    note:"12 KiB; L≥1 时 add_rms_norm 复用同一 γ。"},
+b3:{w:[["W_a (q_a_proj)","NZ [64, 384, 16, 32] (=[{QLORA}/32, {H}/16, 16, 32])","FP8 E4M3","QLORA*H"],
+      ["W_a scale","[{QLORA}, {H}/32] 逐块 e8m0","E8M0","QLORA*H/32"]],
+    note:"TP 复制 (不切分, 每 rank 全量读 12.6 MB); A8W8 路径, 权重离线量化为 NZ 分形布局, scale 每 32 元素块一个 e8m0。"},
+b4:{w:[["γ (q_a_layernorm 增益)","[{QLORA}]","BF16","QLORA*2"]],
+    note:"4 KiB。"},
+b5:{w:[["W_b (q_b_proj)","NZ [{HEADS}*256/{TP}/32, 128, 16, 32]","FP8 E4M3","HEADS*QK*QLORA/TP"],
+      ["W_b scale","[{HEADS}*256/{TP}, {QLORA}/32]","E8M0","HEADS*QK*QLORA/32/TP"]],
+    note:"按头维 TP 切分, 每 rank 33.6/{TP} MB; 是 attention 段第二大的权重。"},
+b6:{w:[["w_kc (吸收矩阵)","[{HEADS}/{TP}, {NOPE}, {KVLORA}] 按头 batch","BF16","HEADS*NOPE*KVLORA*2/TP"]],
+    note:"由 checkpoint 的 kv_b_proj (BF16, 不量化) 切分派生 — MLA 吸收路径全程保持 BF16 精度; 每 rank 12.6/{TP} MB。"},
+b7:{w:[["W_kv (kv_a_proj_with_mqa)","NZ [18, 384, 16, 32] (=[576/32, {H}/16, 16, 32])","FP8 E4M3","576*H"],
+      ["W_kv scale","[576, {H}/32]","E8M0","576*H/32"]],
+    note:"TP 复制; 3.5 MB — 输出仅 576 维 (512 latent + 64 rope), 是所有头共享的 KV 压缩来源。"},
+b8:{w:[["γ (kv_a_layernorm 增益)","[{KVLORA}]","BF16","KVLORA*2"]],
+    note:"1 KiB, rms_norm_rope_scatter 内部消费。"},
+b9:{w:[["wq_b (indexer Q 投影)","[{IH}*128, {QLORA}] 列主序 (trans_b)","FP8 E4M3","IH*IDIM*QLORA"],
+      ["wq_b scale","[{IH}*128, {QLORA}/32]","E8M0","IH*IDIM*QLORA/32"]],
+    note:"indexer 不参与 TP 切分, 每 rank 全量 8.4 MB; 与主注意力共享 q_lora 输入。"},
+b12:{w:[["wk (indexer K 投影)","[128, {H}]","BF16","IDIM*H*2"]],
+    note:"1.6 MB, TP 复制; 输出被全层共享的 index_k_buffer 收集。"},
+b13:{w:[["γ + β (k_norm)","[128] × 2","FP32","IDIM*4*2"]],
+    note:"1 KiB; checkpoint 以 FP32 保存 LayerNorm 参数 (含 β), 是图中少数带 bias 的归一化。"},
+b16:{w:[["weights_proj","[{IH}, {H}]","BF16","IH*H*2"]],
+    note:"393 KB, 32 个索引头的聚合权重。"},
+b19:{w:[["w_vc (V 逆变换)","[{HEADS}/{TP}, {KVLORA}, {VD}] 按头 batch","BF16","HEADS*KVLORA*VD*2/TP"]],
+    note:"kv_b_proj 切 v 段并转置派生 (BF16); 每 rank 16.8/{TP} MB — 与 w_kc 合计恰好等于原 kv_b_proj。"},
+b21:{w:[["W_o (o_proj)","[{H}, {HEADS}*256/{TP}] 列主序 (trans_b)","FP8 E4M3","H*HEADS*VD/TP"],
+        ["W_o scale","[{H}, {HEADS}*256/{TP}/32]","E8M0","H*HEADS*VD/32/TP"]],
+    note:"attention 段最大单权重 100.7/{TP} MB; trans_b 走 2D 列主序, 不做 NZ 预处理; decode 全量读 — 注意力段耗时大头。"},
+b23:{w:[["γ (post_attention_layernorm 增益)","[H]","BF16","H*2"]],
+    note:"12 KiB, 与 b1 同形。"},
+c1:{w:[["W_g (gating)","[{E}, {H}] 列主序","BF16","E*H*2"]],
+    note:"3.15 MB; 路由打分与专家保持同精度 (BF16), 保证 top-8 选择的稳定性。"},
+c2:{w:[["e_score_correction_bias","[{E}]","BF16","E*2"]],
+    note:"512 B; noaux_tc 设计 — bias 只参与 top-8 选择排序, 不参与加权 (归一化用 sigmoid 分数), 是负载均衡的关键。"},
+c8:{w:[["W up (routed gate_up)","[{E}, {H}/32, {EFFN}/16, 16, 32] 4D NZ","FP4 E2M1 (2/byte)","E*EFFN*H"],
+      ["W up scale","[{E}, {EFFN}*2, {H}/64, 2] 逐块 e8m0","E8M0","E*EFFN*2*H/32"]],
+    note:"全部 256 专家的 gate|up 拼接权重 (4096×6144/专家): FP4 打包 0.5 B/元素 → 3.22 GiB, 外加 192 MiB e8m0 scale。decode (M 小) 时仅活跃专家 (≤min(8·M,256) 个) 的 tile 被调度, 实际读取 ≤ 活跃子集; prefill 大 M 时全量读但被计算摊薄 — 典型的权重带宽瓶颈算子。"},
+c10:{w:[["W down (routed)","[{E}, {EFFN}/64, {H}/16, 16, 32] 4D NZ","FP4 E2M1 (2/byte)","E*EFFN*H/2"],
+       ["W down scale","[{E}, {H}, {EFFN}/64, 2]","E8M0","E*H*EFFN/32"]],
+    note:"K={EFFN}, N={H}: 1.61 GiB + scale 101 MB, 恰为 c8 的一半; 同样受 active 表调度, 输出行保持专家聚簇直接进 finalize。"},
+s2m:{w:[["W up (shared gate_up)","[192, 128/{TP}, 16, 32] 4D NZ","FP4 E2M1 (2/byte)","EFFN*H/TP"],
+       ["W up scale","[{EFFN}*2/{TP}, {H}/64, 2]","E8M0","EFFN*2*H/32/TP"]],
+    note:"12.6/{TP} MB + 786/{TP} KB; 全 token 必经, 无活跃调度 — 每步 decode 都全额读取。"},
+s4m:{w:[["W down (shared)","[{EFFN}/{TP}/64, 384, 16, 32] 4D NZ","FP4 E2M1 (2/byte)","EFFN*H/2/TP"],
+       ["W down scale","[{H}, {EFFN}/{TP}/64, 2]","E8M0","H*EFFN/32/TP"]],
+    note:"6.3/{TP} MB + 393/{TP} KB。"},
+d2:{w:[["W gate_up (dense)","[{H}/32, {DFFN}*2/16, 16, 32] 4D NZ","FP4 E2M1","(H/32)*(DFFN*2/16)*16*32/TP"],
+      ["W gate_up scale","[{DFFN}*2/{TP}, {H}/64, 2]","E8M0","DFFN*2*H/32/TP"]],
+    note:"列并行按 N/{TP} 切分; batchmatmul 路径的 4D 形状直积 = K×N 字节 (1 B/元素, 未按 2/byte 打包), 分配 144/{TP} MiB + scale 4.7/{TP} MB — 与 MoE 分组路径 (W4A8GroupedLinear, 0.5 B/元素) 的打包约定不同。"},
+d5:{w:[["W down (dense)","[{DFFN}/{TP}/32, {H}/16, 16, 32] 4D NZ","FP4 E2M1","(DFFN/TP/32)*(H/16)*16*32"],
+      ["W down scale","[{H}, {DFFN}/{TP}/64, 2]","E8M0","H*DFFN/32/TP"]],
+    note:"行并行按 K/{TP} 切分, 输出为部分和待 d6 all_reduce; 72/{TP} MiB + scale 2.4/{TP} MB (同为 1 B/元素直积)。"},
+};
+
+const NODES = [
+/* 全局 (y 70) */
+{id:"s1", x:60,  y:70,  w:150, label:["Embedding","gather_v2"]},
+{id:"s2", x:280, y:70,  w:190, label:["Decoder ×3 (Dense MLP)","L0–L2 · W4A8"]},
+{id:"s3", x:540, y:70,  w:190, label:["Decoder ×7 (MoE)","L3–L9 · DSA+MoE"]},
+{id:"s4", x:800, y:70,  w:140, label:["Final RMSNorm","add_rms_norm"]},
+{id:"s5", x:1010,y:70,  w:160, label:["LM Head","col GEMM+all_gather"]},
+{id:"s6", x:1240,y:70,  w:150, label:["logits [M,V]","→ sampler"]},
+/* Attention (row y 260) */
+{id:"b1", x:20,  y:260, w:130, label:["input_layernorm","rms/add_rms_norm"]},
+{id:"b2", x:170, y:260, w:130, label:["dynamic_mx_quant","tiled_…mx_quant"]},
+{id:"b3", x:320, y:260, w:130, label:["q_a_proj","matmul_mxfp8"]},
+{id:"b4", x:470, y:260, w:130, label:["q_a_LN+quant","rms_norm_dyn_mxfp8"]},
+{id:"b5", x:620, y:260, w:130, label:["q_b_proj","matmul_mxfp8"]},
+{id:"b6", x:770, y:260, w:140, label:["matmul_rope","w_kc 吸收+RoPE"]},
+{id:"b18",x:950, y:260, w:160, label:["kv_quant_sparse_fa","DSA 稀疏注意力"]},
+{id:"b19",x:1140,y:260, w:130, label:["w_vc (bmm)","matmul_transpose"]},
+{id:"b20",x:1290,y:260, w:130, label:["dynamic_mx_quant","(attn out)"]},
+{id:"b21",x:1440,y:260, w:130, label:["o_proj","mmA5 colmajor"]},
+{id:"b22",x:1590,y:260, w:110, label:["all_reduce","(TP>1)"]},
+{id:"b23",x:1590,y:360, w:110, label:["post_attn_LN","add_rms_norm"]},
+/* KV row (y 430) */
+{id:"b7", x:320, y:430, w:130, label:["kv_a_proj_with_mqa","matmul_mxfp8"]},
+{id:"b8", x:470, y:430, w:150, label:["rms_norm_rope_scatter","norm+rope+写cache"]},
+{id:"kcache",x:660,y:430,w:150, label:["Paged KV Cache","[128,128,1,656] fp8"]},
+/* Indexer row (y 560) */
+{id:"b9", x:320, y:560, w:130, label:["indexer.wq_b","mmA5 fp8 col"]},
+{id:"b10",x:470, y:560, w:130, label:["idx_q RoPE+quant","matmul+dyn_quant_v2"]},
+{id:"b12",x:620, y:560, w:130, label:["indexer.wk","mmA5 bf16"]},
+{id:"b13",x:770, y:560, w:130, label:["k_norm","layer_norm_v4"]},
+{id:"b14",x:920, y:560, w:130, label:["idx_k RoPE+quant","matmul+dyn_quant_v2"]},
+{id:"b15",x:1070,y:560, w:130, label:["scatter_update ×2","写 index buffer"]},
+{id:"b16",x:1220,y:560, w:130, label:["indexer.weights_proj","mmA5 bf16"]},
+{id:"b17",x:1370,y:560, w:150, label:["quant_lightning_indexer","top-2048 选择"]},
+{id:"idxbuf",x:1070,y:650,w:200,label:["Index K Buffer","[16384,128] fp8 + scale"]},
+/* MoE (row y 750) */
+{id:"c1", x:20,  y:750, w:130, label:["gate","mmA5 bf16"]},
+{id:"c2", x:170, y:750, w:130, label:["moe_gating_topk","sigmoid+noaux_tc"]},
+{id:"c3", x:340, y:750, w:130, label:["sort_expertidx+count","counting sort"]},
+{id:"c4", x:490, y:750, w:130, label:["moe_init_routing_v3","重排+MX量化"]},
+{id:"c5", x:640, y:750, w:130, label:["abs","row_idx"]},
+{id:"c8", x:790, y:750, w:150, label:["grouped_mm gate_up","W4A8 tile_n=256"]},
+{id:"c9", x:960, y:750, w:130, label:["swiglu_group_quant","+MX quant"]},
+{id:"c10",x:1110,y:750, w:150, label:["grouped_mm down","W4A8"]},
+{id:"c11",x:1280,y:750, w:130, label:["moe_finalize_v2","scatter+加权"]},
+{id:"c13",x:1430,y:750, w:130, label:["add","routed+shared"]},
+{id:"c14",x:1580,y:750, w:120, label:["all_reduce","(TP>1)"]},
+/* row2 (y 890) */
+{id:"c6", x:490, y:890, w:130, label:["compact_active_experts","活跃专家表"]},
+{id:"c7", x:640, y:890, w:130, label:["cumsum","group_list"]},
+{id:"s1m",x:860, y:890, w:130, label:["shared.dyn_mx_quant","tiled_…mx_quant"]},
+{id:"s2m",x:1010,y:890, w:130, label:["shared gate_up","mmA5_w4a8 upGate"]},
+{id:"s3m",x:1160,y:890, w:130, label:["shared swiglu_gq","单组"]},
+{id:"s4m",x:1310,y:890, w:130, label:["shared down","mmA5_w4a8"]},
+/* Dense (y 1140) */
+{id:"d1", x:20,  y:1140,w:130, label:["dynamic_mx_quant","(dense in)"]},
+{id:"d2", x:170, y:1140,w:150, label:["gate_up (W4A8)","6144→24576"]},
+{id:"d3", x:340, y:1140,w:130, label:["swiglu","mega_swiglu"]},
+{id:"d4", x:490, y:1140,w:130, label:["dynamic_mx_quant","(mid)"]},
+{id:"d5", x:640, y:1140,w:150, label:["down (W4A8)","12288→6144"]},
+{id:"d6", x:810, y:1140,w:120, label:["all_reduce","(TP>1)"]},
+];
+const SECTS = [
+ {x:10,y:20,w:1700,h:170, t:"① 全局流水线 — Glm52MegaModel.forward"},
+ {x:10,y:200,w:1700,h:510, t:"② Decoder Layer · MLA + DSA Attention (每层, 以 L≥1 为例)"},
+ {x:10,y:716,w:1700,h:374, t:"③ Decoder Layer · MoE 前馈 (L3–L9)"},
+ {x:10,y:1090,w:1700,h:130,t:"④ Decoder Layer · Dense MLP (L0–L2, 代替 ③)"},
+];
+/* edges: [from, to, {label, dashed, route:[[x,y]...]}] */
+const EDGES = [
+ ["s1","s2"],["s2","s3"],["s3","s4"],["s4","s5"],["s5","s6"],
+ /* attention main */
+ ["b1","b2"],["b2","b3"],["b3","b4"],["b4","b5"],["b5","b6"],
+ ["b6","b18",{label:"q [M,64,576]"}],
+ ["b18","b19"],["b19","b20"],["b20","b21"],["b21","b22"],
+ ["b22","b23"],{f:"b23",t:"c1",route:"b23c1",label:"normed"},
+ {f:"b1",t:"b23",dashed:1,route:"resid",label:"residual"},
+ /* kv path */
+ {f:"b2",t:"b7",route:"b2b7"},
+ ["b7","b8"],{f:"b8",t:"kcache",label:"scatter 写"},
+ {f:"kcache",t:"b18",dashed:1,route:"kc2b18",label:"PA 读"},
+ {f:"b8",t:"b18",route:"b8b18",label:"kvkr (K=V)"},
+ /* indexer */
+ {f:"b4",t:"b9",route:"b4b9",label:"q_a fp8"},
+ ["b9","b10"],{f:"b10",t:"b17",route:"b10b17"},
+ ["b1","b12",{route:"b1b12"}],["b12","b13"],["b13","b14"],["b14","b15"],
+ {f:"b15",t:"idxbuf"},{f:"idxbuf",t:"b17",dashed:1,route:"buf2b17"},
+ {f:"b1",t:"b16",route:"b1b16"},["b16","b17"],
+ {f:"b17",t:"b18",route:"b17b18",label:"topk_indices"},
+ /* MoE */
+ ["c1","c2"],
+ {f:"c2",t:"c3",label:"expert_idx"},
+ {f:"c2",t:"c11",route:"c2c11",label:"topk_out [M,8]"},
+ ["c3","c4"],["c4","c5"],
+ {f:"c4",t:"c8",route:"c4c8",label:"expanded_x"},
+ {f:"c5",t:"c11",route:"c5c11",label:"|row_idx|"},
+ {f:"c4",t:"c6"},{f:"c4",t:"c7",route:"c4c7"},
+ {f:"c6",t:"c8",route:"c6c8"},{f:"c7",t:"c8",route:"c7c8"},
+ ["c8","c9"],{f:"c9",t:"c10",label:"fp8+scale"},
+ ["c10","c11"],["c11","c13"],
+ {f:"b23",t:"s1m",route:"b23s1",label:"hidden"},
+ ["s1m","s2m"],["s2m","s3m"],{f:"s3m",t:"s4m",label:"fp8"},
+ {f:"s4m",t:"c13",route:"s4c13",label:"x_shared"},
+ ["c13","c14"],
+ /* dense */
+ ["d1","d2"],["d2","d3"],["d3","d4"],["d4","d5"],["d5","d6"],
+];
+/* 手工路由点 */
+const ROUTES = {
+ resid:  [[85,324],[85,395],[1645,395],[1645,356]],           // B1 → B23 (向上进 bottom? 画向下进 top 不行—B23 在 y360, 顶 360)
+ b23c1:  [[1645,424],[1660,424],[1660,690],[85,690],[85,750]],
+ b2b7:   [[235,324],[235,377],[385,377],[385,430]],
+ b8b18:  [[545,430],[545,392],[1050,392],[1050,324]],
+ kc2b18: [[735,430],[735,408],[1010,408],[1010,324]],
+ b4b9:   [[535,324],[535,540],[385,540],[385,560]],
+ b10b17: [[535,624],[535,650-4],[535,650-4]],                 // placeholder replaced below
+ buf2b17:[[1270,677],[1445,677],[1445,624]],
+ b1b12:  [[75,324],[75,540],[685,540],[685,560]],
+ b1b16:  [[95,324],[95,540],[1285,540],[1285,560]],
+ b17b18: [[1445,560],[1445,410],[1030,410],[1030,324]],
+ c2c11:  [[235,814],[235,852],[1300,852],[1300,814]],
+ c4c8:   [[530,814],[530,840],[865,840],[865,750]],
+ c5c11:  [[705,750],[705,736],[1335,736],[1335,750]],
+ c4c7:   [[590,814],[590,865],[705,865],[705,890]],
+ c7c8:   [[705,954],[705,975],[845,975],[845,814]],
+ c6c8:   [[555,890],[555,868],[885,868],[885,814]],
+ b23s1:  [[1630,424],[1630,660],[950,660],[950,890]],
+ s4c13:  [[1335,890],[1335,860],[1495,860],[1495,814]],
+};
+/* 修正特殊路由 (进入方向) */
+ROUTES.resid = [[85,324],[85,395],[1645,395],[1645,424]];   // 进 B23 底部
+ROUTES.b10b17 = [[535,624],[535,640],[1355,640],[1355,600],[1370,600]]; // 进 B17 左侧 (绕 idxbuf 上方)
+
+/* ============================ SVG 渲染 ============================ */
+const svg = document.getElementById("svg");
+const NS = "http://www.w3.org/2000/svg";
+const W=1730, HT=1250;
+svg.setAttribute("viewBox",`0 0 ${W} ${HT}`);
+svg.setAttribute("width","100%");
+svg.style.minWidth = "1500px";
+function el(tag,attrs,parent){ const e=document.createElementNS(NS,tag);
+  for(const k in attrs) e.setAttribute(k,attrs[k]); (parent||svg).appendChild(e); return e; }
+
+/* defs: arrow markers */
+const defs = el("defs",{});
+const mk = el("marker",{id:"arr",viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"7",markerHeight:"7",orient:"auto-start-reverse"},defs);
+el("path",{d:"M0,0 L10,5 L0,10 z",fill:"#7A828E"},mk);
+const mkH = el("marker",{id:"arrh",viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"7",markerHeight:"7",orient:"auto-start-reverse"},defs);
+el("path",{d:"M0,0 L10,5 L0,10 z",fill:"#D97706"},mkH);
+
+/* section backgrounds */
+for(const s of SECTS){
+  el("rect",{x:s.x,y:s.y,width:s.w,height:s.h,rx:14,fill:"#FFFFFF",stroke:"#E3E6EA"});
+  el("text",{x:s.x+16,y:s.y+24,class:"sectitle"},svg).textContent=s.t;
+}
+
+const nodeEls = {}, edgeEls = [];
+const NODE_MAP = Object.fromEntries(NODES.map(n=>[n.id,n]));
+
+function nodeCenter(n){ return [n.x+n.w/2, n.y+32]; }
+
+function drawEdge(e){
+  const [from,to,opt] = Array.isArray(e)? [e[0],e[1],e[2]||{}] : [e.f,e.t,e];
+  const a=NODE_MAP[from], b=NODE_MAP[to];
+  let pts, lab;
+  if(opt.route && ROUTES[opt.route]){ pts = ROUTES[opt.route]; }
+  else{
+    const [ax,ay]=nodeCenter(a), [bx,by]=nodeCenter(b);
+    if(Math.abs(ay-by)<8){
+      pts=[[a.x+a.w,ay],[b.x,by]];
+    } else if(by>ay){
+      const midY=(a.y+64+b.y)/2;
+      pts=[[ax,a.y+64],[ax,midY],[bx,midY],[bx,b.y]];
+    } else {
+      const midY=(b.y+64+a.y)/2;
+      pts=[[ax,a.y],[ax,midY],[bx,midY],[bx,b.y+64]];
+    }
+  }
+  lab = opt.label||"";
+  const g = el("g",{});
+  const poly = el("polyline",{points:pts.map(p=>p.join(",")).join(" "),
+    fill:"none",stroke:opt.dashed?"#AEB6C2":"#7A828E","stroke-width":1.4,
+    "stroke-dasharray":opt.dashed?"5 4":"", "marker-end":"url(#arr)"},g);
+  if(lab){
+    /* label at midpoint of longest segment */
+    let bi=0,bl=0;
+    for(let i=0;i<pts.length-1;i++){ const l=Math.hypot(pts[i+1][0]-pts[i][0],pts[i+1][1]-pts[i][1]); if(l>bl){bl=l;bi=i;} }
+    const mx=(pts[bi][0]+pts[bi+1][0])/2, my=(pts[bi][1]+pts[bi+1][1])/2;
+    const t=el("text",{x:mx,y:my-5,class:"edgelabel","text-anchor":"middle"},g);
+    t.textContent=lab;
+  }
+  edgeEls.push({g,a:from,b:to,dashed:!!opt.dashed});
+  return g;
+}
+/* 绘制顺序: 先边后节点 */
+for(const e of EDGES) drawEdge(e);
+
+const NH = 64; /* node height */
+for(const n of NODES){
+  const k = OPS[n.id] ? OPS[n.id].k : "mem";
+  const c = KIND[k];
+  const g = el("g",{class:"opnode","data-id":n.id});
+  const r = el("rect",{x:n.x,y:n.y,width:n.w,height:NH,rx:10,fill:`var(${c.bg.replace("var(","").replace(")","")})`,stroke:`var(${c.c.replace("var(","").replace(")","")})`,"stroke-width":1.4},g);
+  const t1 = el("text",{x:n.x+n.w/2,y:n.y+26,"text-anchor":"middle","font-size":n.w>150?12.5:12,"font-weight":"700",fill:"#1F2430"},g);
+  t1.textContent = n.label[0];
+  const t2 = el("text",{x:n.x+n.w/2,y:n.y+44,"text-anchor":"middle","font-size":10,fill:"#5B6470"},g);
+  t2.textContent = n.label[1];
+  g.addEventListener("click",()=>select(n.id));
+  g.addEventListener("mouseenter",()=>hover(n.id,true));
+  g.addEventListener("mouseleave",()=>hover(n.id,false));
+  nodeEls[n.id]={g,r,t1,t2,kind:k};
+}
+
+/* ============================ 交互 ============================ */
+let selected=null, neigh=[];
+const EDGE_GRAY="#7A828E", EDGE_GRAY_DASH="#AEB6C2", EDGE_HI="#D97706";
+function setEdgeHi(e,on){
+  const p=e.g.querySelector("polyline");
+  p.setAttribute("stroke",on?EDGE_HI:(e.dashed?EDGE_GRAY_DASH:EDGE_GRAY));
+  p.setAttribute("stroke-width",on?2.4:1.4);
+  p.setAttribute("marker-end",on?"url(#arrh)":"url(#arr)");
+}
+function hover(id,on){
+  for(const e of edgeEls){
+    if(e.a===id||e.b===id){
+      /* 已被选中的算子, 其依赖边保持高亮, 不随鼠标离开而熄灭 */
+      if(!on&&selected&&(e.a===selected||e.b===selected)) continue;
+      setEdgeHi(e,on);
+    }
+  }
+}
+function dim(kindOn){
+  for(const id in nodeEls){
+    nodeEls[id].g.style.opacity = (!kindOn||nodeEls[id].kind===kindOn)?"1":"0.15";
+  }
+}
+let inited=false;
+function neighborsOf(id){
+  const out=new Set();
+  for(const e of EDGES){
+    const f=Array.isArray(e)?e[0]:e.f, t=Array.isArray(e)?e[1]:e.t;
+    if(f===id) out.add(t); else if(t===id) out.add(f);
+  }
+  return [...out];
+}
+function clearSel(){
+  if(selected&&nodeEls[selected]) nodeEls[selected].r.setAttribute("stroke-width",1.4);
+  for(const nb of neigh) if(nodeEls[nb]) nodeEls[nb].r.setAttribute("stroke-width",1.4);
+  if(selected) for(const e of edgeEls) if(e.a===selected||e.b===selected) setEdgeHi(e,false);
+  neigh=[]; selected=null;
+}
+function select(id){
+  /* 再次点击同一算子 → 取消选中 */
+  if(id===selected){ deselect(); return; }
+  clearSel();
+  selected=id; neigh=neighborsOf(id);
+  renderPanel(id);
+  const n=nodeEls[id]; if(n) n.r.setAttribute("stroke-width",3);
+  for(const nb of neigh) if(nodeEls[nb]) nodeEls[nb].r.setAttribute("stroke-width",2.2);
+  for(const e of edgeEls) if(e.a===id||e.b===id) setEdgeHi(e,true);
+  if(inited) document.getElementById("panel").scrollIntoView({behavior:"smooth",block:"nearest"});
+  try{ history.replaceState(null,"","#"+id); }catch(e){}
+}
+function deselect(){
+  clearSel();
+  renderHome();
+  try{ history.replaceState(null,"",location.pathname+location.search); }catch(e){}
+}
+function renderHome(){
+  document.getElementById("panel").innerHTML=`<h2>GLM-5.2 推理数据流</h2>
+    <span class="ktag" style="background:var(--cube)">CUBE 矩阵乘</span>
+    <span class="ktag" style="background:var(--vec)">VEC 向量/归约</span>
+    <span class="ktag" style="background:var(--mix)">MIX Cube+Vec 融合</span>
+    <span class="ktag" style="background:var(--comm)">COMM 通信</span>
+    <span class="ktag" style="background:var(--mem)">MEM Cache/Buffer</span>
+    <p>点击图中算子查看: <b>作用与数学原理 · 输入输出参数 · 数据量 · 内存布局 · 依赖关系 · Tiling · UB 分析 · 性能</b>。<br>
+    再次点击同一算子或按 <b>Esc</b> 取消选中; 悬停可临时高亮其上下游依赖。</p>
+    <p class="hint">图例: 实线=主数据流, 虚线=residual / cache 读回。</p>`;
+}
+/* filter chips */
+const filters=[["", "全部"],["cube","CUBE 矩阵乘"],["vec","VEC 向量"],["mix","MIX 融合"],["comm","COMM 通信"],["mem","MEM Cache"]];
+const fbox=document.getElementById("filter");
+for(const [k,name] of filters){
+  const b=document.createElement("button");
+  b.textContent=name;
+  if(k) b.style.borderColor=KIND[k].c, b.style.color=KIND[k].c;
+  b.onclick=()=>{ [...fbox.children].forEach(c=>c.classList.remove("on"));
+    b.classList.add("on"); b.style.background=k?KIND[k].c:"#4B5563"; b.style.color="#fff";
+    dim(k||null);
+    [...fbox.children].forEach(c=>{ if(c!==b){c.style.background="#fff"; c.style.color=c===b?"#fff":(KIND[c.dataset.k]?KIND[c.dataset.k].c:"#1F2430");} });
+  };
+  b.dataset.k=k; fbox.appendChild(b);
+}
+
+/* ============================ 详情面板 ============================ */
+function row(name,shape,dtype,bytesExpr){
+  const b = bytesExpr!=null && bytesExpr!=="" ? ev(bytesExpr) : null;
+  const vol = b!=null? `<span class="vol">${fmtB(Math.abs(b))}</span>` : "";
+  return `<tr><th>${name}</th><td class="mono">${sh(shape)||"—"}<br><span style="color:#8A93A0">${dtype||""} ${vol}</span></td></tr>`;
+}
+function ubSection(id){
+  const u=UB[id];
+  if(!u) return `<h3>UB 使用分析</h3><p class="hint">— (聚合/外部节点, 无片上缓冲)</p>`;
+  const cap=ubCap();
+  const confC={exact:"#1E7E45",heuristic:"#C46A12",conservative:"#8A93A0"}[u.conf];
+  const confN={exact:"EXACT (UB 插件)",heuristic:"HEURISTIC (典型 tiling 估算)",conservative:"CONSERVATIVE (unknown_ub)"}[u.conf];
+  let total=0, rows="";
+  for(const [name,kind,db,expr] of (u.slots||[])){
+    const b=ev(String(expr))||0, a=b*(db||1); total+=a;
+    rows+=`<tr><th>${name}</th><td class="mono">${kind}${db>1?" ×"+db:""}<br><span style="color:#8A93A0">${sh(expr)}</span></td><td class="mono" style="text-align:right">${fmtB(b)}${db>1?" → "+fmtB(a):""}</td></tr>`;
+  }
+  const pct=cap?Math.round(100*total/cap):0;
+  const ov=total>cap;
+  let h=`<h3>UB 使用分析 <span style="font-weight:400;text-transform:none">(per AI Core · per tile)</span></h3>
+    <p><span class="ktag" style="background:${confC}">${confN}</span>
+    容量 <b class="mono">${fmtB(cap)}</b> (${SOC}, 对齐 32B)</p>`;
+  if(rows) h+=`<table><tr><th>槽位</th><td class="mono" style="color:#8A93A0">类型 · 表达式</td><td class="mono" style="text-align:right">分配</td></tr>${rows}
+    <tr><th><b>峰值合计</b></th><td></td><td class="mono" style="text-align:right"><b style="color:${ov?"#C0392B":"#0F766E"}">${fmtB(total)} · ${pct}%${ov?" ⚠ 溢出":""}</b></td></tr></table>`;
+  if(u.other) h+=`<p><b>other_on_chip</b> (L1/L0A/L0B/L0C, 不占 UB): ${u.other}</p>`;
+  h+=`<p>${u.note}</p>`;
+  return h;
+}
+function wgtSection(id){
+  const g=WGT[id]; if(!g||!g.w||!g.w.length) return "";
+  let total=0, rows="";
+  for(const [name,layout,dtype,expr] of g.w){
+    const b=ev(String(expr))||0; total+=b;
+    rows+=`<tr><th>${name}</th><td class="mono">${sh(layout)}<br><span style="color:#8A93A0">${dtype}</span></td><td class="mono" style="text-align:right">${fmtB(b)}</td></tr>`;
+  }
+  let h=`<h3>权重输入分析</h3><table>${rows}
+    <tr><th><b>权重合计</b></th><td></td><td class="mono" style="text-align:right"><b style="color:#6D4FC4">${fmtB(total)}</b></td></tr>
+    <tr><th>每 token 摊销</th><td></td><td class="mono" style="text-align:right">${fmtB(total/Math.max(M,1))} <span style="color:#8A93A0">@M=${M}</span></td></tr></table>`;
+  if(g.note) h+=`<p>${sh(g.note)}</p>`;
+  return h;
+}
+function mathSection(id){
+  const m=MATH[id]; if(!m) return "";
+  return `<h3>作用与数学原理</h3>
+    <p><b>作用</b> — ${m.role}</p>
+    <div class="formula">${m.math}</div>`;
+}
+function navRow(id){
+  const idx=NODES.findIndex(n=>n.id===id);
+  const pv=NODES[(idx-1+NODES.length)%NODES.length], nx=NODES[(idx+1)%NODES.length];
+  return `<div class="navrow">
+    <button onclick="select('${pv.id}')" title="${pv.label[0]}">‹ ${pv.label[0].slice(0,12)}</button>
+    <button onclick="select('${nx.id}')" title="${nx.label[0]}">${nx.label[0].slice(0,12)} ›</button>
+  </div>`;
+}
+function renderPanel(id){
+  const o=OPS[id]; const p=document.getElementById("panel");
+  if(!o){ p.innerHTML="<h2>未收录</h2>"; return; }
+  const c=KIND[o.k];
+  let h=navRow(id)+`<h2>${o.t}</h2>
+    <span class="ktag" style="background:${c.c}">${c.name}</span>
+    <span class="ktag" style="background:#3B414D">kernel: ${o.kn}</span>
+    ${o.kt&&o.kt!=="—"?`<span class="ktag" style="background:#6B7280">${o.kt}</span>`:""}
+    <p>${sh(o.d)}</p>
+    ${mathSection(id)}
+    <h3>输入参数</h3><table>${o.ins.map(r=>row(...r)).join("")}</table>
+    ${wgtSection(id)}
+    <h3>输出参数</h3><table>${o.outs.map(r=>row(...r)).join("")}</table>
+    <h3>数据量 @ M=${M}, TP=${TP}</h3>
+    <table>
+      ${o.perf&&o.perf.flops?`<tr><th>计算量</th><td class="mono">${fmtF(ev(o.perf.flops))} <span style="color:#8A93A0">${o.perf.flops}</span></td></tr>`:""}
+      ${o.perf&&o.perf.traffic?`<tr><th>访存量</th><td class="mono">${fmtB(ev(o.perf.traffic))} <span style="color:#8A93A0">${o.perf.traffic}</span></td></tr>`:""}
+    </table>
+    <h3>内存布局</h3><p>${sh(o.mem)}</p>
+    <h3>依赖关系</h3><p>${sh(o.dep)}</p>
+    <h3>Tiling</h3><p>${sh(o.til)}</p>
+    ${ubSection(id)}
+    <h3>性能</h3><p>${o.perf&&o.perf.note?sh(o.perf.note):"—"}</p>`;
+  p.innerHTML=h;
+}
+document.getElementById("msel").onchange=e=>{M=+e.target.value; if(selected)renderPanel(selected);};
+document.getElementById("tpsel").onchange=e=>{TP=+e.target.value; if(selected)renderPanel(selected);};
+document.getElementById("socsel").onchange=e=>{SOC=e.target.value; if(selected)renderPanel(selected);};
+document.addEventListener("keydown",e=>{
+  const tag=(e.target.tagName||"").toLowerCase();
+  const typing=tag==="input"||tag==="select"||tag==="textarea";
+  if(e.key==="Escape"){ if(typing){e.target.blur();return;} if(selected) deselect(); document.getElementById("searchdrop").style.display="none"; }
+  if(typing) return;
+  if(e.key==="ArrowRight"||e.key==="ArrowLeft"){
+    const idx=NODES.findIndex(n=>n.id===selected);
+    const d=e.key==="ArrowRight"?1:-1;
+    const nx=NODES[(idx+d+NODES.length)%NODES.length];
+    if(nx) select(nx.id);
+    e.preventDefault();
+  }
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){ e.preventDefault(); document.getElementById("opsearch").focus(); }
+});
+/* ============================ 算子搜索 ============================ */
+const sinp=document.getElementById("opsearch"), sdrop=document.getElementById("searchdrop");
+let sact=-1, sitems=[];
+function renderDrop(q){
+  q=q.trim().toLowerCase();
+  if(!q){ sdrop.style.display="none"; return; }
+  sitems=NODES.filter(n=>{ const o=OPS[n.id]||{}; 
+    return (n.label[0]+n.label[1]+(o.kn||"")+(o.t||"")).toLowerCase().includes(q); }).slice(0,10);
+  if(!sitems.length){ sdrop.style.display="none"; return; }
+  sact=-1;
+  sdrop.innerHTML=sitems.map((n,i)=>{
+    const o=OPS[n.id]||{};
+    return `<div data-id="${n.id}"><span>${n.label[0]}</span><span class="sk">${(KIND[o.k]||KIND.mem).name}</span></div>`;
+  }).join("");
+  sdrop.style.display="block";
+  [...sdrop.children].forEach((d,i)=>d.onclick=()=>{ select(sitems[i].id); sdrop.style.display="none"; sinp.blur(); });
+}
+sinp.addEventListener("input",()=>renderDrop(sinp.value));
+sinp.addEventListener("focus",()=>renderDrop(sinp.value));
+sinp.addEventListener("keydown",e=>{
+  if(sdrop.style.display!=="block") return;
+  if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+    e.preventDefault();
+    sact=(sact+(e.key==="ArrowDown"?1:-1)+sitems.length)%sitems.length;
+    [...sdrop.children].forEach((d,i)=>d.classList.toggle("act",i===sact));
+  } else if(e.key==="Enter"&&sact>=0){
+    select(sitems[sact].id); sdrop.style.display="none"; sinp.blur(); e.preventDefault();
+  }
+});
+document.addEventListener("click",e=>{ if(!e.target.closest(".searchbox")) sdrop.style.display="none"; });
+
+/* 深链: #<op id> 直接定位算子; 每次选择同步 hash */
+const h0=(location.hash||"").slice(1);
+if(OPS[h0]) select(h0); else renderHome();
+inited=true;
+/* 点击图中空白处取消选中 */
+document.getElementById("svg").addEventListener("click",ev=>{ if(ev.target.tagName==="svg"&&selected) deselect(); });
+window.addEventListener("hashchange",()=>{ const h=location.hash.slice(1); if(OPS[h]&&h!==selected) select(h); });
+</script>
+</body>
+</html>
