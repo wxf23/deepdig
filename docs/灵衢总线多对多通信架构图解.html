@@ -1,0 +1,1528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UB 灵衢总线 · 多对多通信软硬件架构与性能图解</title>
+<style>
+  :root{
+    --bg:#0b1020; --panel:#121a2e; --panel2:#0e1626; --ink:#e7edf8; --ink-dim:#93a1bd;
+    --line:#22304e; --line-soft:#1c2740;
+    --u:#1273e8; --u2:#3fa2ff; --g:#12b886; --g2:#2ee6a8; --o:#f59e0b; --o2:#ffc04d;
+    --r:#ef4444; --r2:#ff7a7a; --v:#8b5cf6; --v2:#b79bff; --c:#06b6d4; --c2:#5fd8f0;
+    --m:#ec4899; --m2:#ff8ec6;
+    --am:#e7c24a; --am2:#f5e08a;  /* amber：CCU 归约计算层 */
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Segoe UI","PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
+    line-height:1.7; -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(1100px 600px at 85% -10%, rgba(18,115,232,.16), transparent 60%),
+      radial-gradient(900px 500px at -10% 15%, rgba(139,92,246,.12), transparent 55%),
+      radial-gradient(800px 500px at 50% 110%, rgba(18,184,134,.10), transparent 55%);
+    background-attachment:fixed;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:34px 26px 90px;}
+  header.hero{
+    padding:34px 34px 28px; border:1px solid var(--line); border-radius:18px;
+    background:linear-gradient(160deg, rgba(18,115,232,.14), rgba(18,22,38,.6) 45%, rgba(12,22,40,.55));
+    box-shadow:0 10px 40px rgba(0,0,0,.35);
+  }
+  .eyebrow{color:var(--c2); font-size:12.5px; letter-spacing:.18em; text-transform:uppercase; margin:0 0 10px;}
+  h1{font-size:30px; line-height:1.3; margin:0 0 10px; font-weight:700; letter-spacing:.01em;}
+  h1 .accent{background:linear-gradient(90deg,var(--u2),var(--g2)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+  .lead{color:var(--ink-dim); font-size:15px; max-width:900px; margin:0 0 22px;}
+  .meta{display:flex; flex-wrap:wrap; gap:8px;}
+  .chip{
+    font-size:12px; padding:4px 11px; border-radius:999px; border:1px solid var(--line);
+    color:var(--ink-dim); background:rgba(255,255,255,.02); white-space:nowrap;
+  }
+  .chip b{color:var(--ink); font-weight:600;}
+  nav.toc{
+    margin:20px 0 8px; display:flex; flex-wrap:wrap; gap:8px;
+  }
+  nav.toc a{
+    text-decoration:none; color:var(--ink-dim); font-size:13px; padding:6px 12px;
+    border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,.02);
+    transition:.15s;
+  }
+  nav.toc a:hover{color:var(--ink); border-color:var(--u); background:rgba(18,115,232,.12);}
+  nav.toc a .k{color:var(--u2); font-weight:700; margin-right:4px;}
+
+  h2{
+    font-size:23px; margin:54px 0 8px; padding-top:14px; font-weight:700;
+    display:flex; align-items:baseline; gap:12px;
+  }
+  h2 .num{
+    font-size:14px; color:var(--u2); font-weight:800; letter-spacing:.05em;
+    font-variant-numeric:tabular-nums;
+  }
+  h2::after{content:""; flex:1; height:1px; background:linear-gradient(90deg,var(--line),transparent); margin-left:4px;}
+  h3{font-size:17px; margin:26px 0 8px; color:var(--ink); font-weight:650;}
+  p{color:var(--ink-dim); font-size:14.5px; margin:8px 0;}
+  p.intro{color:var(--ink); }
+  strong{color:var(--ink);}
+  em{color:var(--g2); font-style:normal;}
+  .note{
+    font-size:13px; color:var(--ink-dim); border-left:3px solid var(--u);
+    padding:8px 14px; margin:12px 0; background:rgba(18,115,232,.06); border-radius:0 8px 8px 0;
+  }
+  .note b{color:var(--u2);}
+
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    padding:22px 24px; margin:18px 0; box-shadow:0 8px 28px rgba(0,0,0,.28);
+  }
+  .card.tight{padding:16px 18px;}
+  .fig-head{
+    display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:4px;
+  }
+  .fig-head .tag{
+    font-size:11px; font-weight:800; letter-spacing:.08em; color:#fff; padding:2px 9px; border-radius:5px;
+  }
+  .fig-title{font-size:16px; font-weight:650; color:var(--ink);}
+  .fig-cap{font-size:12.5px; color:var(--ink-dim); margin:10px 2px 0;}
+
+  .svgbox{
+    position:relative; background:var(--panel2); border:1px solid var(--line-soft); border-radius:12px;
+    margin:12px 0 4px; overflow:hidden;
+  }
+  .svgbox svg{display:block; width:100%; height:auto;}
+  .svgbox .zoomhint{
+    position:absolute; right:10px; top:10px; font-size:11px; color:var(--ink-dim);
+    background:rgba(10,14,26,.7); border:1px solid var(--line); padding:3px 9px; border-radius:7px;
+    pointer-events:none;
+  }
+  .legend{display:flex; flex-wrap:wrap; gap:14px; margin:10px 2px 2px; font-size:12.5px; color:var(--ink-dim);}
+  .legend .li{display:inline-flex; align-items:center; gap:6px;}
+  .legend .sw{width:12px; height:12px; border-radius:3px; display:inline-block; flex:none;}
+  .legend .ln{display:inline-block; width:18px; height:2px; flex:none;}
+
+  .tag.u{background:var(--u);} .tag.g{background:var(--g);} .tag.o{background:var(--o);} .tag.am{background:var(--am); color:#1a1400;}
+  .tag.r{background:var(--r);} .tag.v{background:var(--v);} .tag.c{background:var(--c);} .tag.m{background:var(--m);}
+
+  /* tables */
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:13px;}
+  th,td{border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top;}
+  th{background:rgba(18,115,232,.10); color:var(--ink); font-weight:600; white-space:nowrap;}
+  td{color:var(--ink-dim);}
+  td b, td strong{color:var(--ink);}
+  tr:nth-child(even) td{background:rgba(255,255,255,.015);}
+  .kpi{font-variant-numeric:tabular-nums; font-weight:700; color:var(--g2);}
+
+  /* topology explorer */
+  .topo-tabs{display:flex; gap:8px; flex-wrap:wrap; margin:12px 0;}
+  .ttab{
+    cursor:pointer; font-size:13px; padding:8px 16px; border-radius:9px; border:1px solid var(--line);
+    background:rgba(255,255,255,.02); color:var(--ink-dim); transition:.15s; user-select:none;
+  }
+  .ttab:hover{color:var(--ink);}
+  .ttab.active{color:#fff; border-color:var(--u); background:linear-gradient(180deg,var(--u),#0d5abf);}
+  .topo-stage{
+    position:relative; background:var(--panel2); border:1px solid var(--line-soft); border-radius:12px;
+    overflow:hidden; margin:8px 0 4px;
+  }
+  .topo-stage svg{display:block; width:100%; height:auto; cursor:pointer;}
+  @keyframes dashFlow{ to{ stroke-dashoffset:-24; } }
+  .topo-stage svg .flowpath{ stroke-dasharray:10 6; animation:dashFlow 1.1s linear infinite; }
+  .topo-stage svg .fsrc{ filter: drop-shadow(0 0 6px rgba(245,158,11,.95)); }
+  .topo-stage svg .tnode, .topo-stage svg .tedge{ transition: opacity .15s; }
+  g.faded{ opacity: .2 !important; }
+  .slider-row{display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:12px 4px 4px; font-size:13px; color:var(--ink-dim);}
+  .slider-row label{color:var(--ink); font-weight:600;}
+  input[type=range]{-webkit-appearance:none; width:220px; height:6px; border-radius:6px; background:#22304e; outline:none;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:18px; height:18px; border-radius:50%; background:var(--u2); cursor:pointer; border:2px solid #fff;}
+  input[type=range]::-moz-range-thumb{width:18px; height:18px; border-radius:50%; background:var(--u2); cursor:pointer; border:2px solid #fff;}
+  .slider-val{font-weight:700; color:var(--g2); min-width:34px; font-variant-numeric:tabular-nums;}
+
+  .cols{display:grid; gap:18px; margin:16px 0;}
+  .cols.c2{grid-template-columns:1fr 1fr;}
+  .cols.c3{grid-template-columns:1fr 1fr 1fr;}
+  @media(max-width:860px){ .cols.c2,.cols.c3{grid-template-columns:1fr;} }
+  .stat{
+    border:1px solid var(--line); border-radius:12px; padding:14px 16px; background:var(--panel);
+  }
+  .stat .v{font-size:24px; font-weight:800; color:var(--g2); font-variant-numeric:tabular-nums; letter-spacing:-.01em;}
+  .stat .l{font-size:12.5px; color:var(--ink-dim); margin-top:2px;}
+
+  /* lightbox */
+  #lb{
+    position:fixed; inset:0; background:rgba(4,7,15,.92); z-index:200; display:none;
+    align-items:center; justify-content:center; padding:24px; cursor:zoom-out; backdrop-filter:blur(4px);
+  }
+  #lb.open{display:flex;}
+  #lb .stage{max-width:min(1400px,96vw); width:100%; background:#0d1526; border:1px solid var(--line); border-radius:14px; padding:14px; cursor:default;}
+  #lb .bar{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; color:var(--ink-dim); font-size:13px;}
+  #lb .close{cursor:pointer; font-size:22px; line-height:1; color:var(--ink-dim); padding:2px 8px;}
+  #lb .close:hover{color:#fff;}
+  #lb svg{width:100%; height:auto; display:block;}
+  mark{background:rgba(245,158,11,.22); color:var(--o2); padding:0 4px; border-radius:3px;}
+
+  .glossary-filter{display:flex; gap:8px; flex-wrap:wrap; margin:14px 0 8px;}
+  .gchip{cursor:pointer; font-size:12.5px; padding:5px 12px; border-radius:999px; border:1px solid var(--line);
+    background:rgba(255,255,255,.02); color:var(--ink-dim); transition:.15s; user-select:none;}
+  .gchip:hover{color:var(--ink);}
+  .gchip.active{color:#fff; border-color:var(--u); background:linear-gradient(180deg,var(--u),#0d5abf);}
+  table.glossary td.term{white-space:nowrap; font-weight:700; color:var(--ink); font-size:13px;}
+  table.glossary td.term .en{font-weight:400; color:var(--u2); font-size:11.5px; display:block;}
+  table.glossary tr[data-cat]{display:table-row;}
+  table.glossary tr[data-cat].hide{display:none;}
+  .tl-abbr{display:inline-block; background:var(--panel2); border:1px solid var(--line); border-radius:6px;
+    padding:2px 8px; font-size:11.5px; color:var(--u2); font-family:ui-monospace,Consolas,monospace; margin-top:2px;}
+
+  .foot{margin-top:60px; padding-top:18px; border-top:1px solid var(--line); color:var(--ink-dim); font-size:12.5px;}
+  .foot a{color:var(--u2); text-decoration:none;}
+  .src{font-size:12px; color:var(--ink-dim); margin:2px 0;}
+  .src b{color:var(--ink-dim);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <p class="eyebrow">UnifiedBus · UB 2.0 · LingQu 灵衢</p>
+    <h1><span class="accent">灵衢总线「多对多通信」</span><br>软硬件架构 · 结构 · 流程 · 拓扑 交互图解</h1>
+    <p class="lead">
+      灵衢（UnifiedBus, UB）用单一协议栈统一「内存访问 / 消息传递 / 过程调用 / 资源管理」，并把「任意 UBPU 平等直访
+      任意 UBPU」的多对多通信做成了一种体系能力。本页以 SVG 交互图呈现其协议栈、单芯片硬件、Jetty 多对多编程模型、
+      事务流转时序、UMMU 寻址鉴权，以及 nD-Mesh / Clos / Torus 三类大规模拓扑。
+    </p>
+    <div class="meta">
+      <span class="chip">依据 <b>《灵衢®基础规范 2.0》</b>（2025-09，541 页）</span>
+      <span class="chip">依据 <b>昇腾 950 白皮书</b></span>
+      <span class="chip">术语 <b>Jetty / M2N / URMA / UMMU / UBFM</b></span>
+      <span class="chip">关键出处 §2.2 / §4.5 / §5.2-5.3 / §6 / §8.2.2 / §9</span>
+    </div>
+    <nav class="toc">
+      <a href="#s0"><span class="k">⓪</span>系统架构</a>
+      <a href="#s1"><span class="k">①</span>协议栈分层</a>
+      <a href="#s2"><span class="k">②</span>硬件结构</a>
+      <a href="#s3"><span class="k">③</span>Jetty M2N 模型</a>
+      <a href="#s4"><span class="k">④</span>事务流转时序</a>
+      <a href="#s5"><span class="k">⑤</span>UMMU 寻址鉴权</a>
+      <a href="#s6"><span class="k">⑥</span>CCU 与 UB 的关系</a>
+      <a href="#s7"><span class="k">⑦</span>拓扑 nD-Mesh / Clos / Torus</a>
+      <a href="#s8"><span class="k">⑧</span>性能规格</a>
+      <a href="#glossary"><span class="k">⑨</span>UB / 灵衢术语表</a>
+    </nav>
+  </header>
+
+  <!-- ===================== SECTION 0 系统架构 ===================== -->
+  <h2 id="s0"><span class="num">00</span>灵衢系统架构图</h2>
+  <p class="intro">本节按《灵衢®基础规范 2.0》<strong>图 2-1「UB Domain 系统组成」与图 2-2「跨 UB Domain 系统组成」</strong>的原图结构忠实重绘。
+  图 2-1 的核心事实：一个 UB Domain 内可容纳 <strong>8 类异构 UBPU</strong>（CPU / NPU / SSU / GPU / Memory / DPU / Switch / Others），
+  每个 UBPU 内部是「处理核心 + Cache/HBM + NoC → <strong>UB Controller + UMMU</strong> → <strong>UB Switch</strong>」，
+  所有 UB Switch 经 <strong>UB Link</strong> 汇聚到中央 <strong>UB Fabric</strong>；图 2-2 展示两个 Domain 经 <strong>UBoE</strong>（ETH Link + TCP/IP）跨域互通。
+  <em>注意：规范原图 2-1 描绘的是数据面，故不含 UBFM（域管理者属 §2.2 管理面要素，已在下方案例单独标注）。</em></p>
+
+  <div class="card">
+    <div class="fig-head"><span class="tag u">FIG 0A</span><span class="fig-title">UB Domain 系统组成（忠实重绘 §2.1 图 2-1）</span></div>
+    <div class="svgbox">
+      <div class="zoomhint">点击图形可全屏查看</div>
+      <svg id="svg-sys1" viewBox="0 0 1080 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="UB Domain系统组成图">
+        <defs>
+          <linearGradient id="gCore" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2a48"/><stop offset="1" stop-color="#111b34"/></linearGradient>
+          <linearGradient id="gCtl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#12366b"/><stop offset="1" stop-color="#0c2348"/></linearGradient>
+          <linearGradient id="gMmu" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a2472"/><stop offset="1" stop-color="#251549"/></linearGradient>
+          <linearGradient id="gSw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d6e52"/><stop offset="1" stop-color="#084634"/></linearGradient>
+        </defs>
+
+        <!-- ===== 上行 4 类 UBPU ===== -->
+        <!-- UBPU(CPU) -->
+        <g class="layer" data-name="UBPU (CPU)" data-cap="UBPU(CPU)：通用处理器型 UBPU，内含 General-purpose core + Cache，经 NoC 接 UB Controller/UMMU，再出 UB Switch。">
+          <rect x="20" y="28" width="248" height="150" rx="12" fill="#0e1626" stroke="#3fa2ff" stroke-width="1.4"/>
+          <text x="144" y="48" text-anchor="middle" font-size="13" font-weight="800" fill="#e7edf8">UBPU (CPU)</text>
+          <rect x="32" y="58" width="104" height="34" rx="6" fill="url(#gCore)" stroke="#33456b"/><text x="84" y="79" font-size="10" text-anchor="middle" fill="#c7d2e8">General-purpose core</text>
+          <rect x="144" y="58" width="112" height="34" rx="6" fill="url(#gCore)" stroke="#33456b"/><text x="200" y="79" font-size="10" text-anchor="middle" fill="#c7d2e8">Cache</text>
+          <rect x="64" y="100" width="120" height="26" rx="6" fill="#0e1626" stroke="#5a6a8a"/><text x="124" y="117" font-size="10" text-anchor="middle" fill="#93a1bd">NoC</text>
+          <rect x="32" y="134" width="108" height="34" rx="6" fill="url(#gCtl)" stroke="#3fa2ff"/><text x="86" y="155" font-size="10.5" font-weight="700" text-anchor="middle" fill="#fff">UB Controller</text>
+          <rect x="148" y="134" width="108" height="34" rx="6" fill="url(#gMmu)" stroke="#b79bff"/><text x="202" y="155" font-size="10.5" font-weight="700" text-anchor="middle" fill="#fff">UMMU</text>
+          <rect x="84" y="176" width="120" height="28" rx="6" fill="url(#gSw)" stroke="#2ee6a8"/><text x="144" y="194" font-size="10.5" font-weight="700" text-anchor="middle" fill="#fff">UB Switch</text>
+        </g>
+        <!-- UBPU(NPU) -->
+        <g class="layer" data-name="UBPU (NPU)" data-cap="UBPU(NPU)：AI 计算型 UBPU（如昇腾 950），内含 AI core + Cache + HBM，经 NoC 接 UB Controller/UMMU，出 UB Switch。">
+          <rect x="304" y="28" width="248" height="150" rx="12" fill="#0e1626" stroke="#f59e0b" stroke-width="1.4"/>
+          <text x="428" y="48" text-anchor="middle" font-size="13" font-weight="800" fill="#e7edf8">UBPU (NPU)</text>
+          <rect x="316" y="58" width="72" height="26" rx="5" fill="url(#gCore)" stroke="#33456b"/><text x="352" y="75" font-size="9.5" text-anchor="middle" fill="#c7d2e8">AI core</text>
+          <rect x="396" y="58" width="72" height="26" rx="5" fill="url(#gCore)" stroke="#33456b"/><text x="432" y="75" font-size="9.5" text-anchor="middle" fill="#c7d2e8">Cache</text>
+          <rect x="476" y="58" width="64" height="26" rx="5" fill="url(#gCore)" stroke="#33456b"/><text x="508" y="75" font-size="9.5" text-anchor="middle" fill="#c7d2e8">HBM</text>
+          <rect x="348" y="92" width="120" height="22" rx="5" fill="#0e1626" stroke="#5a6a8a"/><text x="408" y="107" font-size="9.5" text-anchor="middle" fill="#93a1bd">NoC</text>
+          <rect x="316" y="122" width="108" height="30" rx="6" fill="url(#gCtl)" stroke="#3fa2ff"/><text x="370" y="142" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">UB Controller</text>
+          <rect x="432" y="122" width="108" height="30" rx="6" fill="url(#gMmu)" stroke="#b79bff"/><text x="486" y="142" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">UMMU</text>
+          <rect x="368" y="160" width="120" height="26" rx="6" fill="url(#gSw)" stroke="#2ee6a8"/><text x="428" y="177" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">UB Switch</text>
+        </g>
+        <!-- UBPU(SSU) -->
+        <g class="layer" data-name="UBPU (SSU)" data-cap="UBPU(SSU)：存储服务单元（Smart Storage Unit），内含 Storage processor + Cache，经 NoC 接 Controller/UMMU，出 UB Switch。">
+          <rect x="588" y="28" width="248" height="150" rx="12" fill="#0e1626" stroke="#ec4899" stroke-width="1.4"/>
+          <text x="712" y="48" text-anchor="middle" font-size="13" font-weight="800" fill="#e7edf8">UBPU (SSU)</text>
+          <rect x="600" y="58" width="104" height="34" rx="6" fill="url(#gCore)" stroke="#33456b"/><text x="652" y="79" font-size="10" text-anchor="middle" fill="#c7d2e8">Storage processor</text>
+          <rect x="712" y="58" width="112" height="34" rx="6" fill="url(#gCore)" stroke="#33456b"/><text x="768" y="79" font-size="10" text-anchor="middle" fill="#c7d2e8">Cache</text>
+          <rect x="632" y="100" width="120" height="26" rx="6" fill="#0e1626" stroke="#5a6a8a"/><text x="692" y="117" font-size="10" text-anchor="middle" fill="#93a1bd">NoC</text>
+          <rect x="600" y="134" width="108" height="34" rx="6" fill="url(#gCtl)" stroke="#3fa2ff"/><text x="654" y="155" font-size="10.5" font-weight="700" text-anchor="middle" fill="#fff">UB Controller</text>
+          <rect x="716" y="134" width="108" height="34" rx="6" fill="url(#gMmu)" stroke="#b79bff"/><text x="770" y="155" font-size="10.5" font-weight="700" text-anchor="middle" fill="#fff">UMMU</text>
+          <rect x="652" y="176" width="120" height="28" rx="6" fill="url(#gSw)" stroke="#2ee6a8"/><text x="712" y="194" font-size="10.5" font-weight="700" text-anchor="middle" fill="#fff">UB Switch</text>
+        </g>
+        <!-- UBPU(GPU) -->
+        <g class="layer" data-name="UBPU (GPU)" data-cap="UBPU(GPU)：图形处理型 UBPU，内含 Graphics processor + Cache，经 NoC 接 Controller/UMMU，出 UB Switch。">
+          <rect x="870" y="28" width="200" height="150" rx="12" fill="#0e1626" stroke="#12b886" stroke-width="1.4"/>
+          <text x="970" y="48" text-anchor="middle" font-size="13" font-weight="800" fill="#e7edf8">UBPU (GPU)</text>
+          <rect x="882" y="58" width="88" height="34" rx="6" fill="url(#gCore)" stroke="#33456b"/><text x="926" y="79" font-size="9.5" text-anchor="middle" fill="#c7d2e8">Graphics processor</text>
+          <rect x="978" y="58" width="80" height="34" rx="6" fill="url(#gCore)" stroke="#33456b"/><text x="1018" y="79" font-size="9.5" text-anchor="middle" fill="#c7d2e8">Cache</text>
+          <rect x="908" y="100" width="108" height="26" rx="6" fill="#0e1626" stroke="#5a6a8a"/><text x="962" y="117" font-size="10" text-anchor="middle" fill="#93a1bd">NoC</text>
+          <rect x="882" y="134" width="88" height="34" rx="6" fill="url(#gCtl)" stroke="#3fa2ff"/><text x="926" y="155" font-size="9.5" font-weight="700" text-anchor="middle" fill="#fff">UB Controller</text>
+          <rect x="978" y="134" width="80" height="34" rx="6" fill="url(#gMmu)" stroke="#b79bff"/><text x="1018" y="154" font-size="9.5" font-weight="700" text-anchor="middle" fill="#fff">UMMU</text>
+          <rect x="922" y="176" width="104" height="28" rx="6" fill="url(#gSw)" stroke="#2ee6a8"/><text x="974" y="194" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">UB Switch</text>
+        </g>
+
+        <!-- ===== UB Fabric 中央 ===== -->
+        <g class="layer" data-name="UB Fabric" data-cap="UB Fabric：UB Domain 内所有 UB Switch 与 UB Link 的集合（术语表 §1.5）。图中所有 UB Switch 经 UB Link 汇聚于此。">
+          <rect x="380" y="248" width="320" height="74" rx="12" fill="#12b886" opacity="0.14" stroke="#2ee6a8" stroke-width="1.8"/>
+          <text x="540" y="280" text-anchor="middle" font-size="16" font-weight="800" fill="#2ee6a8">UB Fabric</text>
+          <text x="540" y="304" text-anchor="middle" font-size="11" fill="#c7d2e8">Domain 内所有 UB Switch + UB Link 的集合</text>
+        </g>
+
+        <!-- ===== 下行 4 类 UBPU ===== -->
+        <g class="layer" data-name="UBPU (Memory)" data-cap="UBPU(Memory)：内存型 UBPU（内存池化），内含 Co-processor + Mem，经 NoC 接 Controller/UMMU，出 UB Switch。">
+          <rect x="20" y="380" width="248" height="150" rx="12" fill="#0e1626" stroke="#8b5cf6" stroke-width="1.4"/>
+          <text x="144" y="400" text-anchor="middle" font-size="13" font-weight="800" fill="#e7edf8">UBPU (Memory)</text>
+          <rect x="32" y="410" width="104" height="34" rx="6" fill="url(#gCore)" stroke="#33456b"/><text x="84" y="431" font-size="10" text-anchor="middle" fill="#c7d2e8">Co-processor</text>
+          <rect x="144" y="410" width="112" height="34" rx="6" fill="url(#gCore)" stroke="#33456b"/><text x="200" y="431" font-size="10" text-anchor="middle" fill="#c7d2e8">Mem</text>
+          <rect x="64" y="452" width="120" height="26" rx="6" fill="#0e1626" stroke="#5a6a8a"/><text x="124" y="469" font-size="10" text-anchor="middle" fill="#93a1bd">NoC</text>
+          <rect x="32" y="486" width="108" height="34" rx="6" fill="url(#gCtl)" stroke="#3fa2ff"/><text x="86" y="507" font-size="10.5" font-weight="700" text-anchor="middle" fill="#fff">UB Controller</text>
+          <rect x="148" y="486" width="108" height="34" rx="6" fill="url(#gMmu)" stroke="#b79bff"/><text x="202" y="507" font-size="10.5" font-weight="700" text-anchor="middle" fill="#fff">UMMU</text>
+          <rect x="84" y="528" width="120" height="28" rx="6" fill="url(#gSw)" stroke="#2ee6a8"/><text x="144" y="546" font-size="10.5" font-weight="700" text-anchor="middle" fill="#fff">UB Switch</text>
+        </g>
+        <g class="layer" data-name="UBPU (DPU)" data-cap="UBPU(DPU)：数据处理单元（网络/SmartNIC），内含 Processor + Mem + X-engines，经 NoC 接 Controller/UMMU，出 UB Switch。">
+          <rect x="304" y="380" width="248" height="150" rx="12" fill="#0e1626" stroke="#06b6d4" stroke-width="1.4"/>
+          <text x="428" y="400" text-anchor="middle" font-size="13" font-weight="800" fill="#e7edf8">UBPU (DPU)</text>
+          <rect x="316" y="410" width="72" height="26" rx="5" fill="url(#gCore)" stroke="#33456b"/><text x="352" y="427" font-size="9.5" text-anchor="middle" fill="#c7d2e8">Processor</text>
+          <rect x="396" y="410" width="60" height="26" rx="5" fill="url(#gCore)" stroke="#33456b"/><text x="426" y="427" font-size="9.5" text-anchor="middle" fill="#c7d2e8">Mem</text>
+          <rect x="464" y="410" width="76" height="26" rx="5" fill="url(#gCore)" stroke="#33456b"/><text x="502" y="427" font-size="9.5" text-anchor="middle" fill="#c7d2e8">X-engines</text>
+          <rect x="348" y="444" width="120" height="22" rx="5" fill="#0e1626" stroke="#5a6a8a"/><text x="408" y="459" font-size="9.5" text-anchor="middle" fill="#93a1bd">NoC</text>
+          <rect x="316" y="474" width="108" height="30" rx="6" fill="url(#gCtl)" stroke="#3fa2ff"/><text x="370" y="494" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">UB Controller</text>
+          <rect x="432" y="474" width="108" height="30" rx="6" fill="url(#gMmu)" stroke="#b79bff"/><text x="486" y="494" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">UMMU</text>
+          <rect x="368" y="512" width="120" height="26" rx="6" fill="url(#gSw)" stroke="#2ee6a8"/><text x="428" y="529" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">UB Switch</text>
+        </g>
+        <g class="layer" data-name="UBPU (Switch)" data-cap="UBPU(Switch)：交换型 UBPU，内含 Domain-specific processor，经 NoC 接 Controller/UMMU，出 UB Switch（规模扩展用）。">
+          <rect x="588" y="380" width="248" height="150" rx="12" fill="#0e1626" stroke="#f59e0b" stroke-width="1.4"/>
+          <text x="712" y="400" text-anchor="middle" font-size="13" font-weight="800" fill="#e7edf8">UBPU (Switch)</text>
+          <rect x="600" y="410" width="224" height="34" rx="6" fill="url(#gCore)" stroke="#33456b"/><text x="712" y="431" font-size="10" text-anchor="middle" fill="#c7d2e8">Domain-specific processor</text>
+          <rect x="632" y="452" width="120" height="26" rx="6" fill="#0e1626" stroke="#5a6a8a"/><text x="692" y="469" font-size="10" text-anchor="middle" fill="#93a1bd">NoC</text>
+          <rect x="600" y="486" width="108" height="34" rx="6" fill="url(#gCtl)" stroke="#3fa2ff"/><text x="654" y="507" font-size="10.5" font-weight="700" text-anchor="middle" fill="#fff">UB Controller</text>
+          <rect x="716" y="486" width="108" height="34" rx="6" fill="url(#gMmu)" stroke="#b79bff"/><text x="770" y="507" font-size="10.5" font-weight="700" text-anchor="middle" fill="#fff">UMMU</text>
+          <rect x="652" y="528" width="120" height="28" rx="6" fill="url(#gSw)" stroke="#2ee6a8"/><text x="712" y="546" font-size="10.5" font-weight="700" text-anchor="middle" fill="#fff">UB Switch</text>
+        </g>
+        <g class="layer" data-name="UBPU (Others)" data-cap="UBPU(Others)：其他类型 UBPU，体现灵衢『任意拓扑 + 异构资源组合』的开放性。">
+          <rect x="870" y="430" width="200" height="100" rx="12" fill="#0e1626" stroke="#7f90ad" stroke-width="1.4" stroke-dasharray="5 4"/>
+          <text x="970" y="458" text-anchor="middle" font-size="13" font-weight="800" fill="#e7edf8">UBPU (Others)</text>
+          <rect x="882" y="470" width="176" height="28" rx="6" fill="url(#gCore)" stroke="#33456b"/><text x="970" y="489" font-size="10" text-anchor="middle" fill="#c7d2e8">任意处理单元</text>
+          <rect x="906" y="506" width="128" height="26" rx="6" fill="#0e1626" stroke="#5a6a8a"/><text x="970" y="523" font-size="10" text-anchor="middle" fill="#93a1bd">NoC + UB Stack</text>
+        </g>
+
+        <!-- UB Link 连线（各 UBPU 的 UB Switch → UB Fabric） -->
+        <g class="layer" data-name="UB Link" data-cap="UB Link：两个端口及其相连的若干 TX/RX Lane 的集合（可非对称）。图中每条线代表 UBPU 的 UB Switch 汇入 UB Fabric 的点到点链路。">
+          <path d="M144 208 C 144 236 260 260 380 270" stroke="#2ee6a8" stroke-width="1.6" fill="none"/>
+          <path d="M428 186 C 428 230 480 260 520 250" stroke="#2ee6a8" stroke-width="1.6" fill="none"/>
+          <path d="M712 208 C 712 236 600 262 540 270" stroke="#2ee6a8" stroke-width="1.6" fill="none"/>
+          <path d="M974 208 C 974 234 660 262 700 250" stroke="#2ee6a8" stroke-width="1.6" fill="none"/>
+          <path d="M144 352 C 144 336 250 322 370 330" stroke="#2ee6a8" stroke-width="1.6" fill="none"/>
+          <path d="M428 512 C 428 470 470 330 520 322" stroke="#2ee6a8" stroke-width="1.6" fill="none"/>
+          <path d="M712 352 C 712 336 640 322 560 330" stroke="#2ee6a8" stroke-width="1.6" fill="none"/>
+          <path d="M970 562 C 970 580 760 330 720 322" stroke="#2ee6a8" stroke-width="1.6" fill="none" opacity="0.65"/>
+        </g>
+        <text x="700" y="344" font-size="11" fill="#2ee6a8" text-anchor="middle">各 UBPU 的 UB Switch 经 UB Link 汇入 UB Fabric</text>
+
+        <text x="24" y="544" font-size="11.5" fill="#5fd8f0" text-anchor="start">结构对齐规范图 2-1：上行 CPU/NPU/SSU/GPU，下行 Memory/DPU/Switch/Others，8 类异构 UBPU 环绕 UB Fabric。</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span class="li"><span class="sw" style="background:#3fa2ff"></span>计算型 UBPU (CPU/NPU)</span>
+      <span class="li"><span class="sw" style="background:#8b5cf6"></span>存储/存算型 (Memory/SSU)</span>
+      <span class="li"><span class="sw" style="background:#06b6d4"></span>DPU</span>
+      <span class="li"><span class="sw" style="background:#f59e0b"></span>Switch 型 UBPU</span>
+      <span class="li"><span class="sw" style="background:#12b886"></span>UB Fabric / UB Switch</span>
+      <span class="li"><span class="ln" style="background:#2ee6a8"></span>UB Link</span>
+    </div>
+    <div id="sys-cap" class="fig-cap">点击任一 UBPU / 组件，查看其在系统中的角色。</div>
+  </div>
+
+  <div class="card">
+    <div class="fig-head"><span class="tag u">FIG 0B</span><span class="fig-title">跨 UB Domain 系统组成（忠实重绘 §2.1 图 2-2）</span></div>
+    <div class="svgbox">
+      <div class="zoomhint">点击图形可全屏查看</div>
+      <svg id="svg-sys2" viewBox="0 0 1080 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="跨UB Domain系统组成图">
+        <defs>
+          <linearGradient id="gDom" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#101a30"/><stop offset="1" stop-color="#0b1222"/></linearGradient>
+        </defs>
+
+        <!-- 左 Domain -->
+        <g class="layer" data-name="UB Domain (左)" data-cap="左 UB Domain：一组全部用 UB Link 连接的 UBPU + UB Fabric。">
+          <rect x="20" y="60" width="430" height="240" rx="14" fill="url(#gDom)" stroke="#3fa2ff" stroke-width="1.6"/>
+          <text x="235" y="88" text-anchor="middle" font-size="14" font-weight="800" fill="#9cc7ff">UB Domain</text>
+          <!-- UBPU 上排 -->
+          <rect x="40" y="106" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="78" y="127" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <rect x="128" y="106" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="166" y="127" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <rect x="216" y="106" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="254" y="127" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <rect x="304" y="106" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="342" y="127" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <!-- UB Fabric -->
+          <rect x="105" y="158" width="260" height="34" rx="8" fill="#12b886" opacity="0.16" stroke="#2ee6a8"/><text x="235" y="180" text-anchor="middle" font-size="11" font-weight="700" fill="#2ee6a8">UB Fabric</text>
+          <path d="M78 140 L 160 158 M166 140 L 200 158 M254 140 L 260 158 M342 140 L 310 158" stroke="#2ee6a8" stroke-width="1.2" fill="none"/>
+          <!-- UBPU 下排 -->
+          <rect x="40" y="208" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="78" y="229" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <rect x="128" y="208" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="166" y="229" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <rect x="216" y="208" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="254" y="229" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <rect x="304" y="208" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="342" y="229" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <path d="M78 208 L 160 192 M166 208 L 200 192 M254 208 L 260 192 M342 208 L 310 192" stroke="#2ee6a8" stroke-width="1.2" fill="none"/>
+        </g>
+
+        <!-- 右 Domain -->
+        <g class="layer" data-name="UB Domain (右)" data-cap="右 UB Domain：另一组 UBPU + UB Fabric，经 UBoE 与左域互通。">
+          <rect x="630" y="60" width="430" height="240" rx="14" fill="url(#gDom)" stroke="#3fa2ff" stroke-width="1.6"/>
+          <text x="845" y="88" text-anchor="middle" font-size="14" font-weight="800" fill="#9cc7ff">UB Domain</text>
+          <rect x="650" y="106" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="688" y="127" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <rect x="738" y="106" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="776" y="127" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <rect x="826" y="106" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="864" y="127" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <rect x="914" y="106" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="952" y="127" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <rect x="715" y="158" width="260" height="34" rx="8" fill="#12b886" opacity="0.16" stroke="#2ee6a8"/><text x="845" y="180" text-anchor="middle" font-size="11" font-weight="700" fill="#2ee6a8">UB Fabric</text>
+          <path d="M688 140 L 770 158 M776 140 L 810 158 M864 140 L 870 158 M952 140 L 920 158" stroke="#2ee6a8" stroke-width="1.2" fill="none"/>
+          <rect x="650" y="208" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="688" y="229" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <rect x="738" y="208" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="776" y="229" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <rect x="826" y="208" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="864" y="229" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <rect x="914" y="208" width="76" height="34" rx="7" fill="#1273e8" opacity="0.5" stroke="#3fa2ff"/><text x="952" y="229" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">UBPU</text>
+          <path d="M688 208 L 770 192 M776 208 L 810 192 M864 208 L 870 192 M952 208 L 920 192" stroke="#2ee6a8" stroke-width="1.2" fill="none"/>
+        </g>
+
+        <!-- 中间 UBoE -->
+        <g class="layer" data-name="UBoE 跨域互联" data-cap="UBoE（UB over Ethernet）：通过以太/IP 网络承载 UB 事务实现跨 UB Domain 互通。原图标注 ETH Link + UBoE + TCP/IP。">
+          <rect x="470" y="128" width="140" height="96" rx="10" fill="#ec4899" opacity="0.12" stroke="#ff7a7a" stroke-width="1.5"/>
+          <text x="540" y="152" text-anchor="middle" font-size="11" font-weight="700" fill="#ffd4d4">ETH Link</text>
+          <text x="540" y="176" text-anchor="middle" font-size="12" font-weight="800" fill="#ff7a7a">UBoE</text>
+          <text x="540" y="200" text-anchor="middle" font-size="11" fill="#ffd4d4">TCP/IP</text>
+        </g>
+        <path d="M450 180 L 470 180" stroke="#ff7a7a" stroke-width="2" fill="none"/>
+        <path d="M610 180 L 630 180" stroke="#ff7a7a" stroke-width="2" fill="none"/>
+
+        <text x="24" y="336" font-size="11.5" fill="#5fd8f0">结构对齐规范图 2-2：两个 UB Domain，各自 UBPU + UB Fabric，中间经 UBoE（ETH Link + TCP/IP）跨域互通。</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span class="li"><span class="sw" style="background:#1273e8"></span>UBPU</span>
+      <span class="li"><span class="sw" style="background:#12b886"></span>UB Fabric</span>
+      <span class="li"><span class="ln" style="background:#2ee6a8"></span>UB Link</span>
+      <span class="li"><span class="sw" style="background:#ec4899"></span>UBoE（ETH + TCP/IP）</span>
+    </div>
+    <div id="sys2-cap" class="fig-cap">点击两个 Domain 或 UBoE，查看跨域互通语义。</div>
+  </div>
+
+  <!-- ===================== SECTION 1 协议栈 ===================== -->
+  <h2 id="s1"><span class="num">01</span>协议栈分层</h2>
+  <p class="intro">灵衢用单一协议栈承载内存 / 消息 / 调用 / 管理四类操作。多对多通信的正交分工是——
+  <strong>网络层路由</strong>（多路径）、<strong>传输层通道共享</strong>（多通道汇聚）、<strong>事务层 Jetty/SQ/RQ</strong>（连接池化）、
+  <strong>功能层 M2N</strong>（多对多语义）。旁路单元 <strong>UMMU</strong> 负责地址转换与鉴权，<strong>UBFM</strong> 负责域级资源管理。</p>
+
+  <div class="card">
+    <div class="fig-head">
+      <span class="tag u">FIG 1</span>
+      <span class="fig-title">UB 协议栈与多对多通信的责任分工</span>
+      <span class="fig-cap" style="margin-left:auto;">点击任意图层高亮其责任边界</span>
+    </div>
+    <div class="svgbox">
+      <div class="zoomhint">点击图形可全屏查看</div>
+      <svg id="svg-stack" viewBox="0 0 1040 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="UB协议栈分层图">
+        <defs>
+          <linearGradient id="ggU" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1273e8"/><stop offset="1" stop-color="#3fa2ff"/></linearGradient>
+          <linearGradient id="ggG" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0d9d6e"/><stop offset="1" stop-color="#2ee6a8"/></linearGradient>
+          <linearGradient id="ggV" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#7c4de0"/><stop offset="1" stop-color="#b79bff"/></linearGradient>
+          <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#7f90ad"/></marker>
+        </defs>
+        <text x="30" y="38" font-size="14" fill="#93a1bd">协议栈（自顶向下）</text>
+        <!-- layers -->
+        <g class="layer" data-name="功能层" data-cap="功能层：提供 Load/Store 同步访问与 URMA 异步访问两类编程模型；其上叠加 URPC、多Entity协同、Entity管理。M2N 语义在此层显式化（§8.2.2.2）。">
+          <rect x="30" y="52" width="620" height="60" rx="9" fill="url(#ggV)" opacity="0.16" stroke="#8b5cf6" stroke-width="1.5"/>
+          <circle cx="66" cy="82" r="15" fill="#8b5cf6"/><text x="66" y="87" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">L7</text>
+          <text x="96" y="78" fill="#e7edf8" font-size="15" font-weight="700">功能层 Functional</text>
+          <text x="96" y="98" fill="#c7d2e8" font-size="12.5">Load/Store 同步 · URMA 异步 · URPC · 多Entity协同 · Entity管理</text>
+          <g class="badge"><rect x="470" y="72" width="168" height="28" rx="14" fill="#8b5cf6" opacity="0.9"/><text x="554" y="90" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">★ Jetty M2N 多对多语义</text></g>
+        </g>
+        <g class="layer" data-name="事务层" data-cap="事务层：内存/消息/维护/管理四类事务；四种服务模式 ROI(发起端保序)/ROT(目标端保序)/ROL(下层保序)/UNO(不可靠)。Jetty 绑定 SQ/RQ 承载事务。">
+          <rect x="30" y="116" width="620" height="54" rx="9" fill="#1273e8" opacity="0.13" stroke="#1273e8" stroke-width="1.5"/>
+          <circle cx="66" cy="143" r="15" fill="#1273e8"/><text x="66" y="148" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">L6</text>
+          <text x="96" y="139" fill="#e7edf8" font-size="15" font-weight="700">事务层 Transaction</text>
+          <text x="96" y="158" fill="#c7d2e8" font-size="12.5">内存 / 消息 / 维护 / 管理 事务 · ROI / ROT / ROL / UNO</text>
+        </g>
+        <g class="layer" data-name="传输层" data-cap="传输层：RTP(可靠+重传) / CTP(轻量，可靠性卸载到链路层) / UTP(不可靠) / TP Bypass(旁路)。TP Channel 组共享(TGPG)让多个 Initiator/Target 对复用同一批通道 → 多对多带宽汇聚。">
+          <rect x="30" y="174" width="620" height="54" rx="9" fill="#12b886" opacity="0.13" stroke="#12b886" stroke-width="1.5"/>
+          <circle cx="66" cy="201" r="15" fill="#12b886"/><text x="66" y="206" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">L5</text>
+          <text x="96" y="197" fill="#e7edf8" font-size="15" font-weight="700">传输层 Transport</text>
+          <text x="96" y="216" fill="#c7d2e8" font-size="12.5">RTP · CTP · UTP · TP Bypass · PSN · 重传 · 拥塞控制</text>
+          <g class="badge"><rect x="432" y="190" width="206" height="26" rx="13" fill="#12b886" opacity="0.9"/><text x="535" y="207" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff">▲ TP Channel 组共享 TGPG</text></g>
+        </g>
+        <g class="layer" data-name="网络层" data-cap="网络层：CNA(16/24bit)/IP(32/128bit) 寻址；逐包/逐流多路径路由(RT+LBF)；QoS(SL-VL)；拥塞标记 CAQM/FECN/FECN_RTT；网络隔离 NPI；死锁避免(路由/VL切换/超时丢包)。多对多拓扑可达性在此层实现。">
+          <rect x="30" y="232" width="620" height="54" rx="9" fill="#f59e0b" opacity="0.13" stroke="#f59e0b" stroke-width="1.5"/>
+          <circle cx="66" cy="259" r="15" fill="#f59e0b"/><text x="66" y="264" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">L4</text>
+          <text x="96" y="255" fill="#e7edf8" font-size="15" font-weight="700">网络层 Network</text>
+          <text x="96" y="274" fill="#c7d2e8" font-size="12.5">路由 · 多路径 · QoS · 拥塞标记 · NPI · 死锁避免 · ICRC</text>
+          <g class="badge"><rect x="500" y="248" width="138" height="26" rx="13" fill="#f59e0b" opacity="0.9"/><text x="569" y="265" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff">▲ 逐包/逐流多路径</text></g>
+        </g>
+        <g class="layer" data-name="数据链路层" data-cap="数据链路层：CRC / 点到点重传 / 信用流控(Cell=n×Flit, Flit=20B) / 16 条虚拟通道 VL。VL 主动切换是多对多环状拓扑防死锁的关键。">
+          <rect x="30" y="290" width="620" height="54" rx="9" fill="#06b6d4" opacity="0.13" stroke="#06b6d4" stroke-width="1.5"/>
+          <circle cx="66" cy="317" r="15" fill="#06b6d4"/><text x="66" y="322" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">L3</text>
+          <text x="96" y="313" fill="#e7edf8" font-size="15" font-weight="700">数据链路层 Data Link</text>
+          <text x="96" y="332" fill="#c7d2e8" font-size="12.5">CRC · 点到点重传 · 信用流控 · 16 虚拟通道 VL</text>
+        </g>
+        <g class="layer" data-name="物理层" data-cap="物理层：PCS 编码 / 帧定界 / PMA；链路状态机 Link_Idle→Probe→Discovery→Config→Active→Retrain；支持降速/降 lane。72 Lane HiLink SerDes → 双向 2016GB/s。">
+          <rect x="30" y="348" width="620" height="54" rx="9" fill="#ec4899" opacity="0.13" stroke="#ec4899" stroke-width="1.5"/>
+          <circle cx="66" cy="375" r="15" fill="#ec4899"/><text x="66" y="380" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">L2</text>
+          <text x="96" y="371" fill="#e7edf8" font-size="15" font-weight="700">物理层 / PHY</text>
+          <text x="96" y="390" fill="#c7d2e8" font-size="12.5">PCS · PMA · 链路状态机 · 降速/降 lane · FEC</text>
+          <g class="badge"><rect x="452" y="364" width="186" height="26" rx="13" fill="#ec4899" opacity="0.9"/><text x="545" y="381" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff">▲ 72 Lane 双向 2016GB/s</text></g>
+        </g>
+        <!-- side plane comment -->
+        <text x="672" y="76" font-size="20" fill="#b79bff" font-weight="700">◤ 旁路单元</text>
+        <g class="layer" data-name="旁路·UMMU" data-cap="UMMU：内存地址映射 + 访问权限校验，Home 侧对 UBMD=(EID,TokenID,UBA) 做四步转换与鉴权，确保『任意 User 访任意 Home』可审计可隔离。">
+          <rect x="672" y="92" width="338" height="66" rx="9" fill="#8b5cf6" opacity="0.10" stroke="#8b5cf6" stroke-width="1.2"/>
+          <text x="700" y="120" fill="#e7edf8" font-size="14.5" font-weight="700">UMMU</text>
+          <text x="700" y="142" fill="#c7d2e8" font-size="12">地址转换 MATT · 权限校验 MAPT</text>
+        </g>
+        <g class="layer" data-name="旁路·UBFM" data-cap="UBFM：域管理者，集中管理计算/互连/通信资源，多实例协同。拓扑发现、地址分配、路由配置、资源编排（对等数据通路 + 中央管控面）。">
+          <rect x="672" y="166" width="338" height="66" rx="9" fill="#1273e8" opacity="0.10" stroke="#1273e8" stroke-width="1.2"/>
+          <text x="700" y="194" fill="#e7edf8" font-size="14.5" font-weight="700">UBFM（域管理）</text>
+          <text x="700" y="216" fill="#c7d2e8" font-size="12">拓扑发现 · 地址分配 · 资源编排</text>
+        </g>
+        <g class="layer" data-name="旁路·安全" data-cap="安全：设备认证 / 资源分区隔离(UPI) / 访问控制(TokenID+TokenValue) / 数据通路加密(CIP) / 可信执行环境扩展(TEE)。多租户 M2N 天然安全。">
+          <rect x="672" y="240" width="338" height="66" rx="9" fill="#12b886" opacity="0.10" stroke="#12b886" stroke-width="1.2"/>
+          <text x="700" y="268" fill="#e7edf8" font-size="14.5" font-weight="700">安全 Security</text>
+          <text x="700" y="290" fill="#c7d2e8" font-size="12">认证 · UPI 分区 · 访问控制 · CIP · TEE</text>
+        </g>
+        <g class="layer" data-name="同行·CCU" data-cap="CCU（集合通信单元）：Broadcast/ReduceScatter/AllGather/AllReduce/All2All(v) 硬件卸载。多对多扇出场景（广播/组播语义）由 CCU 微码在硬件侧加速。">
+          <rect x="672" y="314" width="338" height="66" rx="9" fill="#f59e0b" opacity="0.10" stroke="#f59e0b" stroke-width="1.2"/>
+          <text x="700" y="342" fill="#e7edf8" font-size="14.5" font-weight="700">CCU（集合通信）</text>
+          <text x="700" y="364" fill="#c7d2e8" font-size="12">Broadcast · AllGather · AllReduce · All2All</text>
+        </g>
+        <!-- data plane arrows -->
+        <path d="M 340 402 L 340 424" stroke="#7f90ad" stroke-width="2" marker-end="url(#arr)"/>
+        <text x="352" y="420" font-size="12.5" fill="#93a1bd">数据通路（对等，无第三方介入）</text>
+        <!-- bottom payload strip -->
+        <g class="layer" data-name="物理介质" data-cap="物理介质：112G PAM4 HiLink SerDes 与光电互连，支持 UB Switch 组网与 UBoE 对接以太。">
+          <rect x="30" y="428" width="620" height="46" rx="9" fill="#22304e" stroke="#33456b"/>
+          <text x="60" y="456" fill="#b7c3da" font-size="13.5" font-weight="700">PCB / 背板 / 光互连 · 112G PAM4 HiLink SerDes · UB Switch · UBoE</text>
+        </g>
+        <!-- L1 -->
+        <rect x="30" y="482" width="620" height="44" rx="9" fill="#e7edf8" opacity="0.05" stroke="#5a6a8a"/>
+        <circle cx="66" cy="504" r="15" fill="#5a6a8a"/><text x="66" y="509" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">L1</text>
+        <text x="96" y="501" fill="#c7d2e8" font-size="13.5" font-weight="650">物理介质 / 互连介质</text>
+        <text x="96" y="518" fill="#93a1bd" font-size="11.5">电互联 · 光互联 · 背板</text>
+        <text x="672" y="470" font-size="13" fill="#93a1bd">图例：左侧为主协议栈，</text>
+        <text x="672" y="490" font-size="13" fill="#93a1bd">右侧为贯穿各层的旁路/加速单元。</text>
+        <text x="672" y="530" font-size="12.5" fill="#5fd8f0">协议分层出处：§2.2（541 页规范，line 471–517）</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span class="li"><span class="sw" style="background:#8b5cf6"></span>功能/事务高层</span>
+      <span class="li"><span class="sw" style="background:#f59e0b"></span>网络层（路由/多路径）</span>
+      <span class="li"><span class="sw" style="background:#12b886"></span>传输层（通道共享）</span>
+      <span class="li"><span class="sw" style="background:#06b6d4"></span>链路层（VL/信用流控）</span>
+      <span class="li"><span class="sw" style="background:#ec4899"></span>物理层</span>
+      <span class="li"><span class="sw" style="background:#1273e8"></span>旁路单元</span>
+    </div>
+    <div id="stack-cap" class="fig-cap">点击图形任一图层，查看其层次与在多对多通信中的责任。</div>
+  </div>
+
+  <!-- ===================== SECTION 2 硬件结构 ===================== -->
+  <h2 id="s2"><span class="num">02</span>硬件结构：单芯片互联与 On-Chip Switch</h2>
+  <p class="intro">昇腾 950 采用 <strong>2×AI Die + 2×IO Die + 高速片上内存</strong> 的 Chiplet UMA 架构。关键设计是
+  <mark>UB On-Chip Switch 内嵌于 IO Die</mark>：片间转发流量在 IO Die 完成，<em>不进计算 Die、不占 DRAM 带宽</em>——
+  这正是密集多对多流量不会拖垮 AI 算力的硬件原因。</p>
+
+  <div class="card">
+    <div class="fig-head"><span class="tag g">FIG 2</span><span class="fig-title">昇腾 950 Chiplet 结构与 UB 端口 / On-Chip Switch</span></div>
+    <div class="svgbox">
+      <div class="zoomhint">点击图形可全屏查看</div>
+      <svg id="svg-chip" viewBox="0 0 1040 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="昇腾950芯片结构图">
+        <defs>
+          <linearGradient id="dieG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a2742"/><stop offset="1" stop-color="#0f1830"/></linearGradient>
+          <linearGradient id="ioG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#14233a"/><stop offset="1" stop-color="#0d1728"/></linearGradient>
+        </defs>
+        <text x="30" y="40" font-size="15" fill="#93a1bd">芯片顶视图（Chiplet 示意）</text>
+        <!-- package -->
+        <rect x="30" y="56" width="980" height="472" rx="18" fill="#0d1424" stroke="#2b3a5c" stroke-width="1.5"/>
+        <text x="50" y="82" font-size="13" fill="#7f90ad">昇腾 950 (2×AI Die + 2×IO Die + 高速片上内存 · D2D Clink · UMA)</text>
+
+        <!-- AI Die A -->
+        <g class="chip-blk" data-name="AI Die ×2" data-cap="2 个 AI Die：36 个 AI 子系统(每子系统 1 Cube + 2 Vector)，最高 128MB L2 Cache；算力 547 TFLOPS(BF16)/1034(FP8)/2007(MXFP4)。">
+          <rect x="70" y="100" width="270" height="180" rx="12" fill="url(#dieG)" stroke="#3fa2ff" stroke-width="1.5"/>
+          <text x="94" y="128" font-size="15" font-weight="700" fill="#e7edf8">AI Die</text>
+          <text x="205" y="214" font-size="12" fill="#93a1bd" text-anchor="middle">36×AI 子系统</text>
+          <text x="205" y="232" font-size="12" fill="#93a1bd" text-anchor="middle">Cube + Vector</text>
+          <text x="205" y="250" font-size="12" fill="#93a1bd" text-anchor="middle">最高 128MB L2</text>
+          <circle cx="120" cy="152" r="22" fill="#1273e8" opacity="0.18"/>
+          <text x="120" y="157" text-anchor="middle" font-size="10" fill="#3fa2ff">Cube</text>
+          <circle cx="170" cy="152" r="22" fill="#1273e8" opacity="0.18"/>
+          <text x="170" y="157" text-anchor="middle" font-size="10" fill="#3fa2ff">Vec</text>
+          <rect x="240" y="138" width="80" height="24" rx="12" fill="#1273e8" opacity="0.9"/>
+          <text x="280" y="154" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">CCU</text>
+        </g>
+
+        <!-- AI Die B -->
+        <g class="chip-blk" data-name="AI Die ×2" data-cap="2 个 AI Die：36 个 AI 子系统(每子系统 1 Cube + 2 Vector)，最高 128MB L2 Cache；算力 547 TFLOPS(BF16)/1034(FP8)/2007(MXFP4)。">
+          <rect x="700" y="100" width="270" height="180" rx="12" fill="url(#dieG)" stroke="#3fa2ff" stroke-width="1.5"/>
+          <text x="724" y="128" font-size="15" font-weight="700" fill="#e7edf8">AI Die</text>
+          <text x="835" y="214" font-size="12" fill="#93a1bd" text-anchor="middle">36×AI 子系统</text>
+          <text x="835" y="232" font-size="12" fill="#93a1bd" text-anchor="middle">Cube + Vector</text>
+          <text x="835" y="250" font-size="12" fill="#93a1bd" text-anchor="middle">最高 128MB L2</text>
+          <circle cx="750" cy="152" r="22" fill="#1273e8" opacity="0.18"/><text x="750" y="157" text-anchor="middle" font-size="10" fill="#3fa2ff">Cube</text>
+          <circle cx="800" cy="152" r="22" fill="#1273e8" opacity="0.18"/><text x="800" y="157" text-anchor="middle" font-size="10" fill="#3fa2ff">Vec</text>
+        </g>
+
+        <!-- IO Die A -->
+        <g class="chip-blk" data-name="IO Die ×2" data-cap="IO Die：内嵌 UB On-Chip Switch（单 IO Die 9 个 X4 端口转发）。转发流量在 IO Die 完成，不进计算 Die、不占 DRAM 带宽。">
+          <rect x="70" y="300" width="270" height="120" rx="12" fill="url(#ioG)" stroke="#2ee6a8" stroke-width="1.5"/>
+          <text x="94" y="326" font-size="14" font-weight="700" fill="#e7edf8">IO Die</text>
+          <rect x="104" y="336" width="210" height="44" rx="8" fill="#12b886" opacity="0.16" stroke="#12b886"/>
+          <text x="209" y="363" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2ee6a8">UB On-Chip Switch (9×X4)</text>
+          <text x="94" y="402" font-size="11" fill="#93a1bd">转发不占计算 Die / DRAM 带宽</text>
+        </g>
+        <g class="chip-blk" data-name="IO Die ×2" data-cap="IO Die：内嵌 UB On-Chip Switch（单 IO Die 9 个 X4 端口转发）。转发流量在 IO Die 完成，不进计算 Die、不占 DRAM 带宽。">
+          <rect x="700" y="300" width="270" height="120" rx="12" fill="url(#ioG)" stroke="#2ee6a8" stroke-width="1.5"/>
+          <text x="724" y="326" font-size="14" font-weight="700" fill="#e7edf8">IO Die</text>
+          <rect x="734" y="336" width="210" height="44" rx="8" fill="#12b886" opacity="0.16" stroke="#12b886"/>
+          <text x="839" y="363" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2ee6a8">UB On-Chip Switch (9×X4)</text>
+        </g>
+
+        <!-- HBM / memory -->
+        <g class="chip-blk" data-name="高速片上内存" data-cap="高速片上内存 DRAM：950PR 最高 128GB(1.6TB/s) / 950DT 最高 144GB(4TB/s)。UMA 统一内存访问整体。">
+          <rect x="368" y="214" width="304" height="206" rx="12" fill="#111b32" stroke="#f59e0b" stroke-width="1.5"/>
+          <text x="392" y="240" font-size="14" font-weight="700" fill="#e7edf8">高速片上内存 DRAM</text>
+          <text x="392" y="262" font-size="12" fill="#f59e0b">PR 128GB · 1.6TB/s</text>
+          <text x="392" y="282" font-size="12" fill="#f59e0b">DT 144GB · 4TB/s</text>
+          <text x="392" y="308" font-size="11" fill="#93a1bd">UMA 统一内存访问</text>
+          <text x="392" y="326" font-size="11" fill="#93a1bd">2 Die L2 硬件一致性</text>
+          <text x="392" y="344" font-size="11" fill="#93a1bd">512B Cache Line / 128B Sector</text>
+        </g>
+
+        <!-- D2D arrows -->
+        <path d="M340 190 C 400 190 460 210 520 240" stroke="#7f90ad" stroke-width="2" fill="none" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+        <path d="M700 190 C 640 190 580 210 520 240" stroke="#7f90ad" stroke-width="2" fill="none" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+        <g><text x="430" y="188" font-size="11" fill="#7f90ad">D2D Clink</text></g>
+
+        <!-- external ports -->
+        <text x="30" y="452" font-size="12.5" fill="#93a1bd">对外 SeedRes 端口：</text>
+        <g class="chip-blk" data-name="对外端口" data-cap="72 Lane HiLink SerDes = 18 个 X4 端口；单端口最高 448Gbps(4×112G)；整芯片双向 2016GB/s；Scale-up/Scale-out 端口复用；UBoE 2×400G + PCIe5 x16 共用端口。">
+          <rect x="410" y="100" width="180" height="86" rx="10" fill="#0f1628" stroke="#ec4899" stroke-width="1.3"/>
+          <text x="500" y="126" text-anchor="middle" font-size="12.5" font-weight="700" fill="#ff7a7a">72 Lane SerDes</text>
+          <text x="500" y="146" text-anchor="middle" font-size="11" fill="#93a1bd">18×X4 @112G</text>
+          <text x="500" y="166" text-anchor="middle" font-size="11" fill="#2ee6a8">双向 2016GB/s</text>
+        </g>
+
+        <!-- port fanout -->
+        <g class="port-links" data-name="端口" data-cap="端口复用：Scale-up(芯片间)/Scale-out(节点间)灵活复用；UBoE 对接以太；PCIe5 兼容 EP/RC。">
+          <line x1="590" y1="143" x2="716" y2="143" stroke="#ec4899" stroke-width="2"/>
+          <line x1="410" y1="160" x2="340" y2="160" stroke="#ec4899" stroke-width="2"/>
+          <line x1="700" y1="168" x2="672" y2="168" stroke="#ec4899" stroke-width="2"/>
+        </g>
+        <text x="30" y="482" font-size="12.5" fill="#7f90ad">端口语义：Scale-up(芯片间) / Scale-out(节点间) 复用 · UBoE 2×400G · PCIe5 x16 128GB/s</text>
+        <text x="30" y="506" font-size="12.5" fill="#5fd8f0">硬件出处：昇腾 950 白皮书 §4.2（On-Chip Switch / 端口 / 带宽）</text>
+      </svg>
+    </div>
+    <div id="chip-cap" class="fig-cap">点击芯片各区块，查看其功能与在多对多通信中的角色。</div>
+  </div>
+
+  <!-- ===================== SECTION 3 Jetty M2N ===================== -->
+  <h2 id="s3"><span class="num">03</span>软件模型：Jetty 多对多（M2N）通信</h2>
+  <p class="intro">规范 §8.2.2.2 给出灵衢对「多对多」的精确定义：<strong>Initiator Jetty 与 Target Jetty 无一一绑定</strong>，
+  任一 Initiator 可发任意 Target，任一 Target 可收任意 Initiator。相比 1:1 模型的 O(N²) 连接对象，M2N 把 Jetty 数量降到 O(N)，
+  用「事务包内显式携带对端 Jetty ID + 响应回带发起方 ID」换连接资源池化。</p>
+
+  <div class="card">
+    <div class="fig-head"><span class="tag v">FIG 3</span><span class="fig-title">Jetty 多对多通信模型（M2N）与 1:1 对比</span></div>
+    <div class="svgbox">
+      <div class="zoomhint">点击图形可全屏查看</div>
+      <svg id="svg-m2n" viewBox="0 0 1040 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Jetty多对多通信模型图">
+        <defs>
+          <marker id="arru" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#3fa2ff"/></marker>
+          <marker id="arrg" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#2ee6a8"/></marker>
+        </defs>
+        <text x="30" y="36" font-size="15" font-weight="700" fill="#b79bff">左侧：M2N 多对多（类型 1）　→　Jetty 资源池化，省连接对象</text>
+        <!-- Initiators -->
+        <g class="jnode" data-name="Initiator Jetty" data-cap="Initiator Jetty：每个发起端一个 Jetty（绑 SQ）。可发任意 Target，无需与目标一一绑定。标准 Jetty 与单边 Jetty(JFS) 均可。">
+          <rect x="60" y="80" width="150" height="56" rx="10" fill="#1273e8" opacity="0.15" stroke="#1273e8" stroke-width="1.5"/>
+          <text x="135" y="106" text-anchor="middle" font-size="13" font-weight="700" fill="#e7edf8">Initiator A(SQ)</text>
+          <text x="135" y="124" text-anchor="middle" font-size="11" fill="#93a1bd">Jetty ID=a1</text>
+        </g>
+        <g class="jnode" data-name="Initiator Jetty" data-cap="Initiator Jetty：每个发起端一个 Jetty（绑 SQ）。可发任意 Target，无需与目标一一绑定。">
+          <rect x="60" y="168" width="150" height="56" rx="10" fill="#1273e8" opacity="0.15" stroke="#1273e8" stroke-width="1.5"/>
+          <text x="135" y="194" text-anchor="middle" font-size="13" font-weight="700" fill="#e7edf8">Initiator B(SQ)</text>
+          <text x="135" y="212" text-anchor="middle" font-size="11" fill="#93a1bd">Jetty ID=b1</text>
+        </g>
+        <g class="jnode" data-name="Initiator Jetty" data-cap="Initiator Jetty：每个发起端一个 Jetty（绑 SQ）。可发任意 Target。">
+          <rect x="60" y="256" width="150" height="56" rx="10" fill="#1273e8" opacity="0.15" stroke="#1273e8" stroke-width="1.5"/>
+          <text x="135" y="282" text-anchor="middle" font-size="13" font-weight="700" fill="#e7edf8">Initiator C(SQ)</text>
+          <text x="135" y="300" text-anchor="middle" font-size="11" fill="#93a1bd">Jetty ID=c1</text>
+        </g>
+        <!-- Targets -->
+        <g class="jnode" data-name="Target Jetty" data-cap="Target Jetty：可接收任意 Initiator 事务，响应中回带 Initiator Jetty 信息。Jetty Group 绑 RQ Group 后免 CPU 分发。">
+          <rect x="470" y="80" width="160" height="56" rx="10" fill="#12b886" opacity="0.16" stroke="#12b886" stroke-width="1.5"/>
+          <text x="550" y="106" text-anchor="middle" font-size="13" font-weight="700" fill="#e7edf8">Target X(RQ)</text>
+          <text x="550" y="124" text-anchor="middle" font-size="11" fill="#93a1bd">Jetty ID=x1</text>
+        </g>
+        <g class="jnode" data-name="Target Jetty" data-cap="Target Jetty：可接收任意 Initiator 事务，响应中回带 Initiator Jetty 信息。">
+          <rect x="470" y="168" width="160" height="56" rx="10" fill="#12b886" opacity="0.16" stroke="#12b886" stroke-width="1.5"/>
+          <text x="550" y="194" text-anchor="middle" font-size="13" font-weight="700" fill="#e7edf8">Target Y(RQ)</text>
+          <text x="550" y="212" text-anchor="middle" font-size="11" fill="#93a1bd">Jetty ID=y1</text>
+        </g>
+        <g class="jnode" data-name="Target Jetty" data-cap="Target Jetty：可接收任意 Initiator 事务，响应中回带 Initiator Jetty 信息。">
+          <rect x="470" y="256" width="160" height="56" rx="10" fill="#12b886" opacity="0.16" stroke="#12b886" stroke-width="1.5"/>
+          <text x="550" y="282" text-anchor="middle" font-size="13" font-weight="700" fill="#e7edf8">Target Z(RQ)</text>
+          <text x="550" y="300" text-anchor="middle" font-size="11" fill="#93a1bd">Jetty ID=z1</text>
+        </g>
+        <!-- many-to-many grid -->
+        <g class="m2n-link" data-name="M2N 链路" data-cap="M2N：每个 Initiator 可发任意 Target（蓝色），每个 Target 可收任意 Initiator。事务包显式指定 Target Jetty ID。">
+          <path d="M210 96 C 330 50 330 90 470 90" stroke="#3fa2ff" stroke-width="1.6" fill="none" opacity="0.5"/>
+          <path d="M210 104 C 320 160 320 190 470 184" stroke="#3fa2ff" stroke-width="1.6" fill="none" opacity="0.5"/>
+          <path d="M210 116 C 340 250 330 270 470 272" stroke="#3fa2ff" stroke-width="1.6" fill="none" opacity="0.5"/>
+          <path d="M210 184 C 320 70 330 90 470 100" stroke="#3fa2ff" stroke-width="1.6" fill="none" opacity="0.5"/>
+          <path d="M210 196 C 340 160 330 190 470 180" stroke="#3fa2ff" stroke-width="1.6" fill="none" opacity="0.5"/>
+          <path d="M210 208 C 320 250 330 268 470 262" stroke="#3fa2ff" stroke-width="1.6" fill="none" opacity="0.5"/>
+          <path d="M210 272 C 330 80 340 92 470 104" stroke="#3fa2ff" stroke-width="1.6" fill="none" opacity="0.5"/>
+          <path d="M210 284 C 320 160 340 190 470 190" stroke="#3fa2ff" stroke-width="1.6" fill="none" opacity="0.5"/>
+          <path d="M210 300 C 340 240 330 260 470 256" stroke="#3fa2ff" stroke-width="1.6" fill="none" opacity="0.5"/>
+        </g>
+
+        <!-- right 1:1 -->
+        <text x="680" y="36" font-size="15" font-weight="700" fill="#5a6a8a">右侧：1:1 一对一（类型 2）→ Jetty 对象多，隔离严格</text>
+        <g class="jnode" data-name="1:1 Initiator" data-cap="1:1 模型：Initiator Jetty 与 Target Jetty 一一绑定，仅标准 Jetty 可用。连接对象数为 O(N²)。">
+          <rect x="700" y="80" width="130" height="44" rx="9" fill="#1273e8" opacity="0.12" stroke="#3f6bb5"/>
+          <text x="765" y="107" text-anchor="middle" font-size="12" font-weight="700" fill="#c7d2e8">Init A</text>
+        </g>
+        <g class="jnode" data-name="1:1 Initiator" data-cap="1:1 模型：Initiator Jetty 与 Target Jetty 一一绑定。">
+          <rect x="700" y="152" width="130" height="44" rx="9" fill="#1273e8" opacity="0.12" stroke="#3f6bb5"/>
+          <text x="765" y="179" text-anchor="middle" font-size="12" font-weight="700" fill="#c7d2e8">Init B</text>
+        </g>
+        <g class="jnode" data-name="1:1 Initiator" data-cap="1:1 模型：Initiator Jetty 与 Target Jetty 一一绑定。">
+          <rect x="700" y="224" width="130" height="44" rx="9" fill="#1273e8" opacity="0.12" stroke="#3f6bb5"/>
+          <text x="765" y="251" text-anchor="middle" font-size="12" font-weight="700" fill="#c7d2e8">Init C</text>
+        </g>
+        <g class="jnode" data-name="1:1 Target" data-cap="1:1 模型：Target Jetty 只接收绑定 Initiator 的事务。">
+          <rect x="880" y="80" width="130" height="44" rx="9" fill="#12b886" opacity="0.12" stroke="#2e9a7a"/>
+          <text x="945" y="107" text-anchor="middle" font-size="12" font-weight="700" fill="#d3ecdf">Tgt X</text>
+        </g>
+        <g class="jnode" data-name="1:1 Target" data-cap="1:1 模型：Target Jetty 只接收绑定 Initiator 的事务。">
+          <rect x="880" y="152" width="130" height="44" rx="9" fill="#12b886" opacity="0.12" stroke="#2e9a7a"/>
+          <text x="945" y="179" text-anchor="middle" font-size="12" font-weight="700" fill="#d3ecdf">Tgt Y</text>
+        </g>
+        <g class="jnode" data-name="1:1 Target" data-cap="1:1 模型：Target Jetty 只接收绑定 Initiator 的事务。">
+          <rect x="880" y="224" width="130" height="44" rx="9" fill="#12b886" opacity="0.12" stroke="#2e9a7a"/>
+          <text x="945" y="251" text-anchor="middle" font-size="12" font-weight="700" fill="#d3ecdf">Tgt Z</text>
+        </g>
+        <line x1="830" y1="102" x2="880" y2="102" stroke="#5a6a8a" stroke-width="1.5"/>
+        <line x1="830" y1="174" x2="880" y2="174" stroke="#5a6a8a" stroke-width="1.5"/>
+        <line x1="830" y1="246" x2="880" y2="246" stroke="#5a6a8a" stroke-width="1.5"/>
+        <text x="830" y="300" font-size="11" fill="#5a6a8a" text-anchor="middle">严格一一绑定（O(N²)）</text>
+
+        <!-- benefit callout -->
+        <g class="jnode" data-name="收益" data-cap="M2N 收益：大幅减少 Jetty 数量，避免 Jetty 资源浪费；标准 Jetty 与单边 Jetty 均可使用多对多模型。">
+          <rect x="60" y="352" width="570" height="90" rx="10" fill="#12b886" opacity="0.07" stroke="#12b886" stroke-width="1.2"/>
+          <text x="82" y="380" font-size="13.5" font-weight="700" fill="#2ee6a8">M2N 模型收益</text>
+          <text x="82" y="404" font-size="12.5" fill="#c7d2e8">• Jetty 数量从 O(N²) 降为 O(N)，连接资源池化复用</text>
+          <text x="82" y="426" font-size="12.5" fill="#c7d2e8">• 事务包内显式携带 Target Jetty ID；响应回带 Initiator ID</text>
+        </g>
+
+        <!-- Jetty type table mini -->
+        <g class="jnode" data-name="Jetty 三种类型" data-cap="Jetty 类型：① 标准 Jetty(SQ+RQ) ② 单边 Jetty(JFS/JFR) ③ Jetty Group(绑 RQ Group，Target 侧免 CPU 分发)。">
+          <rect x="660" y="352" width="350" height="90" rx="10" fill="#8b5cf6" opacity="0.07" stroke="#8b5cf6" stroke-width="1.2"/>
+          <text x="682" y="380" font-size="13.5" font-weight="700" fill="#b79bff">Jetty 三种类型</text>
+          <text x="682" y="404" font-size="12" fill="#c7d2e8">① 标准 Jetty (SQ+RQ)　② 单边 JFS/JFR</text>
+          <text x="682" y="426" font-size="12" fill="#c7d2e8">③ Jetty Group (RQ Group · 免 CPU 分发)</text>
+        </g>
+
+        <text x="30" y="482" font-size="12.5" fill="#7f90ad">配套完成/事件机制：JFC(CQ 轮询) · JFCE(EQ 中断) · JFAE(异常事件)　—— 见 §8.2.2.1</text>
+        <text x="30" y="506" font-size="12.5" fill="#7f90ad">M2N 定义出处：§8.2.2.2「Jetty 通信关系 · 类型 1」；术语 Jetty 见 §1.5（line 276）</text>
+        <text x="30" y="530" font-size="12.5" fill="#5fd8f0">流程三要素：① 获取 Target Jetty 信息并申请使用 → ② 事务指定 Target Jetty → ③ 响应回带 Initiator Jetty</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span class="li"><span class="ln" style="background:#3fa2ff"></span>M2N 发起路径（可任意组合）</span>
+      <span class="li"><span class="sw" style="background:#1273e8"></span>Initiator（绑 SQ）</span>
+      <span class="li"><span class="sw" style="background:#12b886"></span>Target（绑 RQ）</span>
+      <span class="li"><span class="ln" style="background:#5a6a8a"></span>1:1 绑定（对照）</span>
+    </div>
+    <div id="m2n-cap" class="fig-cap">点击任一 Jetty / 链路，查看其语义。</div>
+  </div>
+
+  <!-- ===================== SECTION 4 时序 ===================== -->
+  <h2 id="s4"><span class="num">04</span>事务流转：一次 M2N 异步访问的完整时序</h2>
+  <p class="intro">以「Initiator A 通过 Jetty 向 Target X 发起一次 URMA <strong>Write</strong> 事务」为例。贯穿
+  <strong>功能层 → 事务层(SQ) → 传输层(RTP/CTP) → 网络层(多路径) → 链路层(信用流控) → 对端反向解包 → RQ → JFC 完成</strong>。</p>
+
+  <div class="card">
+    <div class="fig-head"><span class="tag c">FIG 4</span><span class="fig-title">URMA Write 事务时序（M2N）</span><span class="fig-cap" style="margin-left:auto;">①–⑨ 为事务沿协议栈流动阶段</span></div>
+    <div class="svgbox">
+      <div class="zoomhint">点击图形可全屏查看</div>
+      <svg id="svg-seq" viewBox="0 0 1040 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="URMA Write事务时序图">
+        <defs>
+          <linearGradient id="sqG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1273e8"/><stop offset="1" stop-color="#0d5abf"/></linearGradient>
+          <linearGradient id="rqG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#12b886"/><stop offset="1" stop-color="#0c8e68"/></linearGradient>
+        </defs>
+        <!-- lanes -->
+        <g>
+          <line x1="120" y1="60" x2="120" y2="600" stroke="#22304e" stroke-width="1.5"/>
+          <line x1="340" y1="60" x2="340" y2="600" stroke="#22304e" stroke-width="1.5"/>
+          <line x1="640" y1="60" x2="640" y2="600" stroke="#22304e" stroke-width="1.5"/>
+          <line x1="880" y1="60" x2="880" y2="600" stroke="#22304e" stroke-width="1.5"/>
+        </g>
+        <!-- lane heads -->
+        <rect x="60" y="44" width="120" height="34" rx="8" fill="#1273e8"/><text x="120" y="66" text-anchor="middle" font-size="12.5" font-weight="700" fill="#fff">Initiator A</text>
+        <rect x="270" y="44" width="140" height="34" rx="8" fill="#0f1830" stroke="#33456b"/><text x="340" y="66" text-anchor="middle" font-size="12" font-weight="700" fill="#c7d2e8">SQ / 事务层</text>
+        <rect x="560" y="44" width="160" height="34" rx="8" fill="#0f1830" stroke="#33456b"/><text x="640" y="66" text-anchor="middle" font-size="12" font-weight="700" fill="#c7d2e8">传输+网络层</text>
+        <rect x="800" y="44" width="160" height="34" rx="8" fill="#12b886"/><text x="880" y="66" text-anchor="middle" font-size="12.5" font-weight="700" fill="#fff">Target X</text>
+
+        <!-- 1 WR -->
+        <g class="seqbox" data-name="① 下发 WR" data-cap="① Initiator 应用向所属 Jetty(绑 SQ) 下发 Work Request：Write 事务，携带 Target Jetty ID、内存段 UBMD=(EID,TokenID,UBA)、地址长度、数据。">
+          <rect x="128" y="100" width="90" height="40" rx="7" fill="#1273e8" opacity="0.9"/><text x="173" y="124" text-anchor="middle" font-size="12.5" font-weight="700" fill="#fff">Write WR</text>
+          <path d="M218 120 L 330 120" stroke="#3fa2ff" stroke-width="2" marker-end="url(#arr)" fill="none"/>
+          <text x="245" y="108" text-anchor="middle" font-size="10.5" fill="#7f90ad">①下发</text>
+        </g>
+
+        <!-- 2 SQ -->
+        <g class="seqbox" data-name="② SQ 入队" data-cap="② 事务进入 Initiator 侧 SQ。M2N 下多个 Initiator 各自 SQ 独立；服务模式 ROI/ROT/ROL/UNO 决定保序/可靠属性。">
+          <rect x="256" y="150" width="100" height="36" rx="7" fill="#1273e8" opacity="0.3" stroke="#1273e8"/><text x="306" y="173" text-anchor="middle" font-size="12" fill="#c7d2e8">SQ 入队</text>
+          <text x="92" y="180" font-size="10.5" fill="#7f90ad" text-anchor="middle">②事务入 SQ</text>
+        </g>
+
+        <!-- 3 encapsulate -->
+        <g class="seqbox" data-name="③ 事务层封装" data-cap="③ 事务层封装 TAH(事务头)：MAETAH 携带 TokenID(20bit)、地址长度；TVETAH 携带 TokenValue；写入事务携带数据载荷。">
+          <rect x="256" y="206" width="168" height="40" rx="7" fill="#f59e0b" opacity="0.18" stroke="#f59e0b"/><text x="340" y="230" text-anchor="middle" font-size="12.5" fill="#ffc04d">TAH+MAETAH+TVETAH</text>
+        </g>
+
+        <!-- 4 transport -->
+        <g class="seqbox" data-name="④ 传输层" data-cap="④ 传输层封装 RTPH/CTPH：RTP 加 PSN 序列号(支持 GoBackN/选择性重传)；CTP 无端到端重传；可选 TP Bypass 旁路传输层。">
+          <rect x="470" y="266" width="150" height="40" rx="7" fill="#12b886" opacity="0.18" stroke="#12b886"/><text x="545" y="290" text-anchor="middle" font-size="12.5" fill="#2ee6a8">RTP/CTP + PSN</text>
+          <path d="M424 226 L 470 246" stroke="#7f90ad" stroke-width="1.6" fill="none" marker-end="url(#arr)"/>
+        </g>
+        <path d="M640 226 L 640 246" stroke="#7f90ad" stroke-width="1.6" fill="none" marker-end="url(#arr)"/>
+
+        <!-- 5 network -->
+        <g class="seqbox" data-name="⑤ 网络层多路径" data-cap="⑤ 网络层封装 NTH：RT 选路类型(逐流/逐包)+LBF 负载均衡因子；多路径把包散到多条可达路径；SL-VL 做 QoS。">
+          <rect x="470" y="326" width="190" height="40" rx="7" fill="#f59e0b" opacity="0.18" stroke="#f59e0b"/><text x="565" y="350" text-anchor="middle" font-size="12.5" fill="#ffc04d">NTH(RT+LBF) 多路径</text>
+        </g>
+        <!-- multi path fan -->
+        <g>
+          <path d="M565 366 C 565 400 520 414 520 444" stroke="#f59e0b" stroke-width="1.6" fill="none" stroke-dasharray="4 3"/>
+          <path d="M565 366 C 585 400 600 414 600 444" stroke="#f59e0b" stroke-width="1.6" fill="none" stroke-dasharray="4 3"/>
+          <path d="M565 366 C 545 400 540 414 538 444" stroke="#f59e0b" stroke-width="1.6" fill="none" stroke-dasharray="4 3"/>
+          <text x="700" y="410" font-size="11" fill="#933c0b">逐包/逐流多路径</text>
+        </g>
+
+        <!-- 6 link -->
+        <g class="seqbox" data-name="⑥ 链路层" data-cap="⑥ 链路层：CRC、点到点重传、信用流控(基于 16 VL，Cell=n×Flit)。发送方消耗信用证，接收方释放返还信用证。">
+          <rect x="470" y="444" width="190" height="40" rx="7" fill="#06b6d4" opacity="0.18" stroke="#06b6d4"/><text x="565" y="468" text-anchor="middle" font-size="12.5" fill="#5fd8f0">DLLDB + 信用流控</text>
+        </g>
+
+        <!-- 7 unstack target -->
+        <g class="seqbox" data-name="⑦ Target 收包解封装" data-cap="⑦ Target 侧逆序解封装：链路→网络→传输→事务；根据 TAH 的 Target Jetty ID 路由到对应 RQ。">
+          <rect x="730" y="500" width="180" height="44" rx="7" fill="#12b886" opacity="0.3" stroke="#12b886"/><text x="820" y="524" text-anchor="middle" font-size="12.5" fill="#d3ecdf">解封装 → RQ 入队</text>
+          <path d="M660 464 C 720 480 720 500 730 510" stroke="#7f90ad" stroke-width="1.6" fill="none" marker-end="url(#arr)"/>
+        </g>
+
+        <!-- 8 RQ -->
+        <g class="seqbox" data-name="⑧ RQ / UMMU" data-cap="⑧ Target 的 RQ 接收事务；UMMU 用 UBMD 做地址转换与权限校验(MATT/MAPT)，通过后写目标内存段。Jetty Group 按 Hint-hash/RR/RQ深度分发。">
+          <rect x="808" y="560" width="90" height="40" rx="7" fill="#12b886" opacity="0.5"/><text x="853" y="584" text-anchor="middle" font-size="12.5" font-weight="700" fill="#fff">RQ</text>
+          <text x="760" y="560" font-size="10.5" fill="#7f90ad" text-anchor="middle">UMMU 校验</text>
+        </g>
+
+        <!-- 9 complete -->
+        <g class="seqbox" data-name="⑨ 完成通知" data-cap="⑨ 事务完成，事务层向 JFC(绑 CQ) 提交 CQE；若带 FCE 标记则经 JFCE(绑 EQ) 产生中断。M2N 下响应回带 Initiator Jetty ID。">
+          <rect x="250" y="560" width="120" height="40" rx="7" fill="#8b5cf6" opacity="0.25" stroke="#8b5cf6"/><text x="310" y="584" text-anchor="middle" font-size="12" fill="#c7d2e8">JFC/CQ 完成</text>
+          <path d="M808 580 C 700 610 500 610 376 584" stroke="#b79bff" stroke-width="2" fill="none" stroke-dasharray="6 4" marker-end="url(#arr)"/>
+          <text x="600" y="624" text-anchor="middle" font-size="11" fill="#b79bff">⑨ JFC 提交 CQE / JFCE 中断</text>
+        </g>
+
+        <!-- right annotations -->
+        <text x="30" y="660" font-size="12.5" fill="#7f90ad">④⑤⑥ 表达发包方向各层逐层加包头；⑦ 为对端逐层剥包头。</text>
+        <text x="30" y="684" font-size="12.5" fill="#5fd8f0">时序出处：§7 事务层(TAH/MAETAH/TVETAH) / §6 传输层(RTP/CTP/UTP/Bypass) / §5 网络层 / §8.2.2 Jetty</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span class="li"><span class="sw" style="background:#1273e8"></span>发起端/SQ</span>
+      <span class="li"><span class="sw" style="background:#f59e0b"></span>事务层/网络层封装</span>
+      <span class="li"><span class="sw" style="background:#12b886"></span>接收端/RQ</span>
+      <span class="li"><span class="sw" style="background:#06b6d4"></span>链路层</span>
+      <span class="li"><span class="ln" style="background:#b79bff"></span>完成通知</span>
+    </div>
+    <div id="seq-cap" class="fig-cap">点击时序各阶段（①–⑨），查看该阶段在协议栈中的动作。</div>
+  </div>
+
+  <!-- ===================== SECTION 5 UMMU ===================== -->
+  <h2 id="s5"><span class="num">05</span>寻址与鉴权：UMMU 四步处理</h2>
+  <p class="intro">多对多互访中，「任意 User 访任意 Home」必须可靠鉴权。灵衢用
+  <strong>UBMD=(EID, TokenID, UBA)</strong> 三段寻址，把访问合法性全部押在 <mark>Home 侧 UMMU</mark> 的四步处理上：
+  配置查找 → 上下文查找 → 地址转换 → 权限校验。</p>
+
+  <div class="card">
+    <div class="fig-head"><span class="tag o">FIG 5</span><span class="fig-title">UMMU 四步处理流程（EID → TokenID → UBA）</span></div>
+    <div class="svgbox">
+      <div class="zoomhint">点击图形可全屏查看</div>
+      <svg id="svg-ummu" viewBox="0 0 1040 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="UMMU四步处理流程图">
+        <defs>
+          <marker id="arrm" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#f59e0b"/></marker>
+          <marker id="arrr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#ef4444"/></marker>
+        </defs>
+        <text x="30" y="36" font-size="15" font-weight="700" fill="#ffc04d">UBMD = (EID, TokenID, UBA) → Home 侧 UMMU 四步</text>
+
+        <!-- UBMD source -->
+        <g class="ummu-blk" data-name="UBMD 三元组" data-cap="UBMD=(EID,TokenID,UBA)。EID 定位『哪个实体』；TokenID 选『哪套地址表+权限表』；UBA 该窗口内 64bit 虚拟地址。User 侧 UB Decoder 或软件填充。">
+          <rect x="30" y="70" width="980" height="52" rx="10" fill="#111b32" stroke="#f59e0b" stroke-width="1.4"/>
+          <text x="60" y="101" font-size="13.5" font-weight="700" fill="#e7edf8">UBMD 三段寻址：</text>
+          <rect x="250" y="82" width="220" height="30" rx="8" fill="#1273e8" opacity="0.3" stroke="#1273e8"/><text x="360" y="102" text-anchor="middle" font-size="12.5" font-weight="700" fill="#9cc7ff">EID（目标 Entity）</text>
+          <rect x="490" y="82" width="200" height="30" rx="8" fill="#12b886" opacity="0.3" stroke="#12b886"/><text x="590" y="102" text-anchor="middle" font-size="12.5" font-weight="700" fill="#9ff0d0">TokenID（窗口/权限集）</text>
+          <rect x="710" y="82" width="270" height="30" rx="8" fill="#8b5cf6" opacity="0.3" stroke="#8b5cf6"/><text x="845" y="102" text-anchor="middle" font-size="12.5" font-weight="700" fill="#d5c2ff">UBA（64bit 虚拟地址）</text>
+        </g>
+
+        <!-- step 1 -->
+        <g class="ummu-blk" data-name="① 配置查找" data-cap="① 配置查找：UMMU 用 EID 查 TECT，得 TECTE。校验 V(有效位)、ST_MODE(Stage1/2)、MEM_ATTR_SEL(内存属性)，并取 TCT 基地址。V=0 则访问直接失败。">
+          <rect x="30" y="150" width="470" height="150" rx="10" fill="#1273e8" opacity="0.08" stroke="#1273e8" stroke-width="1.3"/>
+          <text x="52" y="176" font-size="14" font-weight="700" fill="#3fa2ff">① 配置查找（TECT）</text>
+          <rect x="52" y="190" width="180" height="44" rx="7" fill="#1273e8" opacity="0.22" stroke="#1273e8"/><text x="142" y="217" text-anchor="middle" font-size="12.5" fill="#c7d2e8">EID → TECTE</text>
+          <path d="M232 212 L 268 212" stroke="#3fa2ff" stroke-width="2" marker-end="url(#arrm)" fill="none"/>
+          <rect x="268" y="188" width="200" height="48" rx="7" fill="#0f1830" stroke="#33456b"/><text x="368" y="208" text-anchor="middle" font-size="12" fill="#c7d2e8">TECTE: V · ST_MODE</text><text x="368" y="226" text-anchor="middle" font-size="12" fill="#c7d2e8">MEM_ATTR_SEL</text>
+          <path d="M368 236 L 368 268" stroke="#3fa2ff" stroke-width="2" marker-end="url(#arrm)" fill="none"/>
+          <rect x="176" y="268" width="180" height="24" rx="7" fill="#1273e8" opacity="0.35"/><text x="266" y="284" text-anchor="middle" font-size="12" fill="#fff">取 TCT 基地址</text>
+        </g>
+
+        <!-- step 2 -->
+        <g class="ummu-blk" data-name="② 上下文查找" data-cap="② 上下文查找：用 TokenID 在 TCT 中索引，得 MATT 基地址(地址转换表) + MAPT 基地址(权限表)。同一块内存可给不同 User 发不同 TokenID → 不同视图/不同权限。">
+          <rect x="540" y="150" width="470" height="150" rx="10" fill="#12b886" opacity="0.08" stroke="#12b886" stroke-width="1.3"/>
+          <text x="562" y="176" font-size="14" font-weight="700" fill="#2ee6a8">② 上下文查找（TCT）</text>
+          <rect x="562" y="190" width="170" height="44" rx="7" fill="#12b886" opacity="0.22" stroke="#12b886"/><text x="647" y="217" text-anchor="middle" font-size="12.5" fill="#d3ecdf">TokenID → TCT</text>
+          <path d="M732 212 L 766 212" stroke="#2ee6a8" stroke-width="2" marker-end="url(#arrg)" fill="none"/>
+          <rect x="766" y="186" width="210" height="52" rx="7" fill="#0f1830" stroke="#33456b"/><text x="871" y="207" text-anchor="middle" font-size="12" fill="#d3ecdf">MATT 基地址</text><text x="871" y="226" text-anchor="middle" font-size="12" fill="#d3ecdf">MAPT 基地址</text>
+        </g>
+
+        <!-- step 3 -->
+        <g class="ummu-blk" data-name="③ 地址转换" data-cap="③ 地址转换：用 UBA 查 MATT，得目标物理地址 PA。MATT[UBA] → PA。">
+          <rect x="30" y="320" width="470" height="110" rx="10" fill="#8b5cf6" opacity="0.08" stroke="#8b5cf6" stroke-width="1.3"/>
+          <text x="52" y="346" font-size="14" font-weight="700" fill="#b79bff">③ 地址转换（MATT）</text>
+          <rect x="52" y="360" width="180" height="44" rx="7" fill="#8b5cf6" opacity="0.22" stroke="#8b5cf6"/><text x="142" y="387" text-anchor="middle" font-size="12.5" fill="#e4d9ff">UBA → MATT</text>
+          <path d="M232 382 L 268 382" stroke="#b79bff" stroke-width="2" marker-end="url(#arr)" fill="none"/>
+          <rect x="268" y="358" width="200" height="48" rx="7" fill="#0f1830" stroke="#33456b"/><text x="368" y="380" text-anchor="middle" font-size="12.5" fill="#fff">目标 PA（物理地址）</text><text x="368" y="398" text-anchor="middle" font-size="11" fill="#93a1bd">UBA 64bit 索引</text>
+        </g>
+
+        <!-- step 4 -->
+        <g class="ummu-blk" data-name="④ 权限校验" data-cap="④ 权限校验：用 UBA 查 MAPT 得权限(读/写/原子)；启用校验时用 TokenID 取 TokenValue 基准，与包内 TVETAH.TokenValue 比对，判定放行/拒绝。">
+          <rect x="540" y="320" width="470" height="110" rx="10" fill="#ec4899" opacity="0.08" stroke="#ec4899" stroke-width="1.3"/>
+          <text x="562" y="346" font-size="14" font-weight="700" fill="#ff7a7a">④ 权限校验（MAPT）</text>
+          <rect x="562" y="360" width="180" height="44" rx="7" fill="#ec4899" opacity="0.22" stroke="#ec4899"/><text x="652" y="387" text-anchor="middle" font-size="12.5" fill="#ffd4d4">UBA → MAPT</text>
+          <path d="M742 382 L 776 382" stroke="#ef4444" stroke-width="2" marker-end="url(#arrr)" fill="none"/>
+          <rect x="776" y="356" width="210" height="52" rx="7" fill="#0f1830" stroke="#33456b"/><text x="881" y="377" text-anchor="middle" font-size="12" fill="#ffd4d4">权限 (R/W/Atomic)</text><text x="881" y="396" text-anchor="middle" font-size="11.5" fill="#ff9a9a">+ TokenValue 比对</text>
+        </g>
+
+        <!-- result -->
+        <g class="ummu-blk" data-name="放行/拒绝" data-cap="校验结果：放行 → 事务写入目标 PA；拒绝 → 返回错误(映射失败/RAP 异常)。所有权限判定发生在 Home 侧，User 侧 UBMD 只是『敲门砖』。">
+          <rect x="30" y="456" width="470" height="62" rx="10" fill="#0f1830" stroke="#2ee6a8" stroke-width="1.3"/>
+          <text x="60" y="484" font-size="13.5" font-weight="700" fill="#2ee6a8">✓ 放行 → 事务写入目标 PA</text>
+          <text x="60" y="506" font-size="12" fill="#7f90ad">所有权限判定在 Home 侧；User 侧 UBMD 仅『敲门砖』</text>
+          <rect x="540" y="456" width="470" height="62" rx="10" fill="#1a0f14" stroke="#ef4444" stroke-width="1.3"/>
+          <text x="570" y="484" font-size="13.5" font-weight="700" fill="#ff7a7a">✗ 拒绝 → 报错（V=0 / 权限不匹配 / RAP）</text>
+          <text x="570" y="506" font-size="12" fill="#7f90ad">MAPT 无权限 或 TokenValue 不匹配</text>
+        </g>
+
+        <text x="30" y="542" font-size="12.5" fill="#5fd8f0">四步出处：§9.4「UMMU 处理流程」；TECT/TCT/MATT/MAPT 见 §9.3-9.4；UBMD 三段定义见 §9.3 与 EID_TokenID_UBA详解.md</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span class="li"><span class="sw" style="background:#1273e8"></span>① 配置查找</span>
+      <span class="li"><span class="sw" style="background:#12b886"></span>② 上下文查找</span>
+      <span class="li"><span class="sw" style="background:#8b5cf6"></span>③ 地址转换</span>
+      <span class="li"><span class="sw" style="background:#ec4899"></span>④ 权限校验</span>
+    </div>
+    <div id="ummu-cap" class="fig-cap">点击任一处理步骤，查看该步的输入/输出与判定逻辑。</div>
+  </div>
+
+  <!-- ===================== SECTION 6 CCU 与 UB ===================== -->
+  <h2 id="s6"><span class="num">06</span>CCU 与 UB 的详细关系</h2>
+  <p class="intro">一个必须先厘清的边界：<strong>CCU 不在《灵衢®基础规范》里</strong>。UB 规范 §8.6 用「集合通信操作」这个
+  <em>功能层语义</em>描述它——「一次集合通信可被抽象为单一功能调用，再由 UB 分解为多个底层 UB 事务，动态映射到各 UBPU 协同执行」。
+  CCU（Collective Communication Unit）则是<strong>昇腾 950 芯片把这条语义具体化的硬件单元</strong>。因此二者的关系是：
+  <mark>UB 定义「集合通信是什么」，CCU 实现「集合通信怎么用 UB 跑」</mark>——CCU 的数据面直接复用了 URMA 的 Jetty/SQ-RQ/UMMU/传输层。</p>
+
+  <div class="card">
+    <div class="fig-head"><span class="tag am">FIG 6</span><span class="fig-title">CCU 硬件结构与 URMA(Jetty/UMMU) 的复用关系</span></div>
+    <div class="svgbox">
+      <div class="zoomhint">点击图形可全屏查看</div>
+      <svg id="svg-ccu" viewBox="0 0 1040 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="CCU与UB关系图">
+        <defs>
+          <linearGradient id="ccuAm" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#e7c24a"/><stop offset="1" stop-color="#f5e08a"/></linearGradient>
+          <marker id="arrB" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#3fa2ff"/></marker>
+          <marker id="arrR" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#ef4444"/></marker>
+        </defs>
+
+        <!-- 左：STARS 调度 -->
+        <g class="layer" data-name="STARS 2.0 调度器" data-cap="STARS（System Task and Resource Scheduler）向 CCU 下发集合通信调用任务（Mission）。白皮书：STARS 可并发调度最多 32 个 CCU 任务、64 个 UB Jetty、32 个 SDMA 通道。">
+          <rect x="30" y="60" width="220" height="120" rx="12" fill="#1273e8" opacity="0.14" stroke="#1273e8" stroke-width="1.4"/>
+          <text x="140" y="92" text-anchor="middle" font-size="14.5" font-weight="700" fill="#9cc7ff">STARS 2.0</text>
+          <text x="140" y="114" text-anchor="middle" font-size="11.5" fill="#c7d2e8">全芯片任务调度器</text>
+          <text x="140" y="134" text-anchor="middle" font-size="11" fill="#93a1bd">并发调度 ≤32 CCU 任务</text>
+          <text x="140" y="150" text-anchor="middle" font-size="11" fill="#93a1bd">≤64 UB Jetty</text>
+        </g>
+
+        <!-- 中间上：CCU 硬件 -->
+        <g class="layer" data-name="CCU（集合通信单元）" data-cap="CCU 硬件：接收 STARS 下发的 Mission 任务，根据软件预置的通信算法（微码）自行搬运与同步、自行完成归约计算。把集合通信展开为多项并行小颗粒任务循环执行。">
+          <rect x="330" y="60" width="380" height="210" rx="14" fill="#e7c24a" opacity="0.10" stroke="#e7c24a" stroke-width="2"/>
+          <text x="520" y="92" text-anchor="middle" font-size="16" font-weight="800" fill="#f5e08a">CCU 集合通信处理引擎</text>
+          <!-- CCUM -->
+          <rect x="356" y="108" width="160" height="90" rx="10" fill="#e7c24a" opacity="0.14" stroke="#e7c24a"/>
+          <text x="436" y="134" text-anchor="middle" font-size="13.5" font-weight="700" fill="#f5e08a">CCUM</text>
+          <text x="436" y="154" text-anchor="middle" font-size="11" fill="#d9d2b0">Mission 任务入口</text>
+          <text x="436" y="174" text-anchor="middle" font-size="11" fill="#d9d2b0">软件编程 · 指令解析</text>
+          <!-- CCUA -->
+          <rect x="536" y="108" width="156" height="90" rx="10" fill="#e7c24a" opacity="0.14" stroke="#e7c24a"/>
+          <text x="614" y="134" text-anchor="middle" font-size="13.5" font-weight="700" fill="#f5e08a">CCUA</text>
+          <text x="614" y="154" text-anchor="middle" font-size="11" fill="#d9d2b0">MemorySlice 数据存储</text>
+          <text x="614" y="174" text-anchor="middle" font-size="11" fill="#d9d2b0">Reduce Unit 归约计算</text>
+          <!-- 判断 -->
+          <polygon points="520,208 560,208 590,238 550,270 490,270 450,238" fill="#0f1830" stroke="#e7c24a" stroke-width="1.3"/>
+          <text x="520" y="236" text-anchor="middle" font-size="11" font-weight="700" fill="#f5e08a">判指令</text>
+          <text x="520" y="254" text-anchor="middle" font-size="10" fill="#d9d2b0">搬运 or 归约</text>
+          <!-- 分支两个标签 -->
+          <rect x="360" y="286" width="130" height="30" rx="8" fill="#12b886" opacity="0.9"/>
+          <text x="425" y="306" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">走 URMA 搬运</text>
+          <rect x="560" y="286" width="130" height="30" rx="8" fill="#e7c24a" opacity="0.9"/>
+          <text x="625" y="306" text-anchor="middle" font-size="12" font-weight="700" fill="#1a1400">走 Reduce Unit</text>
+        </g>
+
+        <!-- 右上：算法支持 -->
+        <g class="layer" data-name="支持的集合通信算法" data-cap="CCU 支持的典型算法：Broadcast / ReduceScatter / AllGather / AllReduce / All2All / All2Allv。由微码把算法展开为小颗粒任务循环。">
+          <rect x="750" y="60" width="260" height="120" rx="12" fill="#8b5cf6" opacity="0.10" stroke="#8b5cf6" stroke-width="1.4"/>
+          <text x="880" y="90" text-anchor="middle" font-size="13.5" font-weight="700" fill="#b79bff">典型算法</text>
+          <text x="880" y="114" text-anchor="middle" font-size="12" fill="#e4d9ff">Broadcast · Reduce Scatter</text>
+          <text x="880" y="134" text-anchor="middle" font-size="12" fill="#e4d9ff">All Gather · All Reduce</text>
+          <text x="880" y="154" text-anchor="middle" font-size="12" fill="#e4d9ff">All2All · All2Allv</text>
+        </g>
+
+        <!-- 中：URMA/Jetty 层 -->
+        <g class="layer" data-name="URMA / Jetty 层（复用）" data-cap="CCU 的数据面复用 URMA：经 Jetty 的 SQ/RQ + Doorbell 触发内存搬运，UMMU 做 VA→PA 转换与权限校验。这就是 CCU 与 UB 的『物理接点』。">
+          <rect x="30" y="336" width="980" height="96" rx="12" fill="#12b886" opacity="0.08" stroke="#12b886" stroke-width="1.6"/>
+          <text x="54" y="366" font-size="14" font-weight="700" fill="#2ee6a8">URMA 异步访存（Jetty 队列）—— CCU 数据面的承载层</text>
+          <rect x="54" y="380" width="210" height="38" rx="7" fill="#12b886" opacity="0.18" stroke="#12b886"/><text x="159" y="404" text-anchor="middle" font-size="12" fill="#d3ecdf">Jetty (SQ / RQ / Doorbell)</text>
+          <rect x="282" y="380" width="210" height="38" rx="7" fill="#12b886" opacity="0.18" stroke="#12b886"/><text x="387" y="404" text-anchor="middle" font-size="12" fill="#d3ecdf">UMMU (VA→PA + 鉴权)</text>
+          <rect x="510" y="380" width="210" height="38" rx="7" fill="#12b886" opacity="0.18" stroke="#12b886"/><text x="615" y="404" text-anchor="middle" font-size="12" fill="#d3ecdf">传输层 RTP / CTP</text>
+          <rect x="738" y="380" width="252" height="38" rx="7" fill="#12b886" opacity="0.18" stroke="#12b886"/><text x="864" y="404" text-anchor="middle" font-size="12" fill="#d3ecdf">UB 端口 (多 Port / 多路径)</text>
+        </g>
+
+        <!-- 下：UB 协议栈 -->
+        <g class="layer" data-name="UB 协议栈（承载）" data-cap="CCU 的事务最终作为 UB 事务，跑在 UB 协议栈上（网络层路由 + 链路层 + 物理层）。UB 是 CCU 的『地基』。">
+          <rect x="30" y="448" width="980" height="52" rx="12" fill="#1273e8" opacity="0.06" stroke="#1273e8" stroke-width="1.3"/>
+          <text x="54" y="479" font-size="13" font-weight="700" fill="#9cc7ff">UB 协议栈（网络层路由 · 数据链路层 · 物理层 SerDes）—— 承载 CCU 事务</text>
+        </g>
+
+        <!-- 连线 -->
+        <path d="M250 120 C 300 120 300 120 330 120" stroke="#3fa2ff" stroke-width="2" fill="none" marker-end="url(#arrB)"/>
+        <path d="M520 210 C 520 250 520 280 490 286" stroke="#e7c24a" stroke-width="1.5" fill="none" stroke-dasharray="4 3"/>
+        <path d="M520 210 C 520 260 500 280 560 286" stroke="#e7c24a" stroke-width="1.5" fill="none" stroke-dasharray="4 3"/>
+        <path d="M425 316 C 425 330 425 336 425 380" stroke="#2ee6a8" stroke-width="2" fill="none" marker-end="url(#arrB)"/>
+        <path d="M520 300 C 520 360 520 360 520 380" stroke="#2ee6a8" stroke-width="2" fill="none" stroke-dasharray="4 3"/>
+        <path d="M615 380 C 615 360 615 340 625 300" stroke="#2ee6a8" stroke-width="1.5" fill="none" stroke-dasharray="4 3"/>
+        <text x="60" y="528" font-size="12.5" fill="#93a1bd">门铃（Doorbell）触发 → Jetty 队列搬运 → UMMU 校验 → RTP/CTP → 多 Port 发出到 peer。</text>
+        <text x="60" y="552" font-size="12.5" fill="#5fd8f0">依据：昇腾 950 白皮书 §4.6.4「CCU」与 §4.6.1「URMA」；open_cann hcomm ccu_microcode_v1.h（dmaOpCode 映射 Send/Write/Read/Atomic）。</text>
+        <text x="60" y="576" font-size="12.5" fill="#5fd8f0">CCU 概念出处边界：UB 规范 §8.6 只定义『集合通信操作』这一功能层语义，不含『CCU』词（规范全文无 CCUM/CCUA/MemorySlice/Reduce Unit）。</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span class="li"><span class="sw" style="background:#1273e8"></span>STARS 调度</span>
+      <span class="li"><span class="sw" style="background:#e7c24a"></span>CCU（CCUM + CCUA）</span>
+      <span class="li"><span class="sw" style="background:#12b886"></span>URMA/Jetty（复用层）</span>
+      <span class="li"><span class="sw" style="background:#8b5cf6"></span>算法（微码展开）</span>
+      <span class="li"><span class="ln" style="background:#2ee6a8"></span>数据面复用</span>
+    </div>
+    <div id="ccu-cap" class="fig-cap">点击各区块，查看 CCU 与 UB/URMA/UMMU 的接口关系。</div>
+  </div>
+
+  <div class="card">
+    <div class="fig-head"><span class="tag am">表</span><span class="fig-title">CCU 微码指令 ↔ URMA 数据面操作 映射（open_cann 源码实据）</span></div>
+    <table>
+      <thead>
+        <tr><th>CCU 微码 TMem dmaOpCode</th><th>对应 UB/URMA 事务</th><th>说明（源码 ccu_microcode_v1.h 注释）</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="kpi">0x0</td><td>Send</td><td>消息事务，消耗对端 RQE</td></tr>
+        <tr><td class="kpi">0x1</td><td>Send with Immediate</td><td>带立即数消息</td></tr>
+        <tr><td class="kpi">0x3</td><td>Write</td><td>单边内存写，进对端内存段</td></tr>
+        <tr><td class="kpi">0x5</td><td>Write with Notify</td><td>写后通知（JFC/JFCE 完成语义）</td></tr>
+        <tr><td class="kpi">0x6</td><td>Read</td><td>单边内存读</td></tr>
+        <tr><td class="kpi">0x70</td><td>Write with Atomic Store Add</td><td>原子加（对应 UB Atomic fetch_add，SyncAtX 指令专用）</td></tr>
+      </tbody>
+    </table>
+    <div class="note">
+      <b>关键证据</b>：CCU 指令结构里的 <code>rmtJettyType</code> 枚举值为 <code>00: JFR, 01: Jetty, 10: JettyGroup</code>——
+      与 UB 规范 §8.2.2 的三种 Jetty 类型（标准 Jetty / 单边 JFR / Jetty Group）<b>一一对应</b>。这证明 CCU 的数据面不是私有协议，
+      而是直接消费 UB 的 Jetty 抽象。此外 CCU 建链用 <code>CcuConnectionType::UBC_TP / UB_CTP</code>（即 UB 传输层的 RTP/CTP）。
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="fig-head"><span class="tag am">表</span><span class="fig-title">CCU 归约能力边界（源自 CCU 数据面 API 文档）</span></div>
+    <table>
+      <thead>
+        <tr><th>维度</th><th>支持范围</th><th>不支持 / 限制</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><b>归约算子</b></td><td>SUM / MAX / MIN</td><td>PROD（传入被拒绝）</td></tr>
+        <tr><td><b>数据类型</b></td><td>UINT8 / INT16 / INT32 / FP16 / FP32 / BF16</td><td>其余类型拒绝</td></tr>
+        <tr><td><b>MS Buffer 单片</b></td><td>≤ 4096 字节；LocalReduce 可一次归约 2–8 路 MS</td><td>超过 4096B 需分片</td></tr>
+        <tr><td><b>SUM 精度</b></td><td>低精度输入先升精度累加再截断回同精度</td><td>—（精度处理由硬件内建）</td></tr>
+        <tr><td><b>归约位置</b></td><td>本端（LocalReduce）或对端原地（ReadReduce/WriteReduce）</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===================== SECTION 6 拓扑 ===================== -->
+  <h2 id="s7"><span class="num">07</span>拓扑：nD-Mesh / Clos / Torus（可交互）</h2>
+  <p class="intro">规范 §2.2 明确支持 <strong>nd-mesh、Clos、torus 及任意拓扑组合</strong>，三类拓扑都靠
+  <em>链路层 16 VL + 网络层多路径 + 传输层通道共享</em>承接多对多流量。交互增强：<mark>动画高亮一条路由路径</mark>、
+  拖动规模滑块实时重绘、点击节点/链路查看语义。Clos 已按 Folded-Clos（k 元胖树）重画：Spine 数 = Leaf 数 = k。</p>
+
+  <div class="card">
+    <div class="fig-head"><span class="tag o">FIG 7</span><span class="fig-title">交互式拓扑浏览器</span></div>
+
+    <div class="topo-tabs">
+      <div class="ttab active" data-topo="mesh">nD-Mesh（多对多直连网格）</div>
+      <div class="ttab" data-topo="clos">Clos（Fat-Tree 多级交换）</div>
+      <div class="ttab" data-topo="torus">Torus（环面环绕网格）</div>
+    </div>
+
+    <div class="topo-stage" id="topo-stage">
+      <svg id="svg-topo" viewBox="0 0 1080 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="拓扑图"></svg>
+    </div>
+
+    <div class="slider-row" id="slider-mesh-row">
+      <label>Mesh 维度 N</label>
+      <input type="range" id="slider-mesh" min="2" max="5" step="1" value="3">
+      <span class="slider-val" id="mesh-val">3</span>
+      <span style="color:#7f90ad; font-size:12px;">＝ N×N 个节点（端节点可作多对多收发）</span>
+    </div>
+    <div class="slider-row" id="slider-clos-row" style="display:none;">
+      <label>Folded-Clos 基数 k</label>
+      <input type="range" id="slider-clos" min="2" max="4" step="1" value="2">
+      <span class="slider-val" id="clos-val">2</span>
+      <span style="color:#7f90ad; font-size:12px;">＝ k Spine + k Leaf，每 Leaf k 个计算节点（共 k² 节点）</span>
+    </div>
+    <div class="slider-row" id="slider-torus-row" style="display:none;">
+      <label>Torus 环面维度（d1 × d2）</label>
+      <input type="range" id="slider-torus" min="2" max="5" step="1" value="3">
+      <span class="slider-val" id="torus-val">3</span>
+      <span style="color:#7f90ad; font-size:12px;">＝ d×d 个节点，环绕边已闭合</span>
+    </div>
+
+    <div class="legend">
+      <span class="li"><span class="sw" style="background:#1273e8"></span>计算节点（UBPU）</span>
+      <span class="li"><span class="sw" style="background:#12b886"></span>UB Switch（Clos 顶层）</span>
+      <span class="li"><span class="ln" style="background:#3fa2ff"></span>链路</span>
+      <span class="li"><span class="ln" style="background:#f59e0b; height:3px;"></span>高亮路由路径</span>
+    </div>
+
+    <div id="topo-info" class="fig-cap">切换拓扑类型或拖动规模滑块，实时重绘；点击图中节点/链路查看说明（下方会显示）。</div>
+
+    <div class="note">
+      <b>死锁避免（§5.3.6）</b>：Mesh/Torus 存在环，信用流控逐级反压可能形成循环依赖。规范给出三手段——
+      ① 路由防死锁（拓扑特定路由算法）② <b>VL 主动切换</b>（配置 Input VL→Output VL 映射破除环路）③ 超时丢包（队列超时未调度即丢包解环）。
+      Torus 因此特别依赖「维度序路由（dimension-order routing）+ VL 切换」来保证无死锁。
+    </div>
+    <div class="note">
+      <b>组播说明</b>：网络层只有单播路由（Primary/Port CNA），无硬件组播交付。「广播/组播」在 §8.6 是以
+      <b>多 Entity 协同·融合操作</b> 的形式由软件/微码组合实现。多对多扇出场景由 <b>CCU</b>（Broadcast/AllGather）硬件加速，属「操作级扇出」而非「地址级组播」。
+    </div>
+  </div>
+
+  <!-- ===================== SECTION 7 规格 ===================== -->
+  <h2 id="s8"><span class="num">08</span>性能规格与关键指标</h2>
+
+  <div class="cols c3">
+    <div class="stat"><div class="v">2016 GB/s</div><div class="l">单卡 UB 对外带宽（双向峰值 2TB/s）</div></div>
+    <div class="stat"><div class="v">56 GB/s</div><div class="l">单 X4 端口最高带宽（4×112Gbps）</div></div>
+    <div class="stat"><div class="v">128 TB</div><div class="l">UB Memory 跨端共享访问容量上限</div></div>
+    <div class="stat"><div class="v">16 VL</div><div class="l">每链路虚拟通道数（信用流控粒度）</div></div>
+    <div class="stat"><div class="v">8192</div><div class="l">最大超节点规模（SuperNode，卡）</div></div>
+    <div class="stat"><div class="v">128K+</div><div class="l">最大集群规模（卡）</div></div>
+  </div>
+
+  <div class="card">
+    <div class="fig-head"><span class="tag c">表</span><span class="fig-title">多对多通信关键机制与性能对照</span></div>
+    <table>
+      <thead>
+        <tr><th>机制</th><th>层级</th><th>在多对多通信中的作用</th><th>关键参数</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><b>逐包/逐流多路径</b></td><td>网络层</td><td>全对全流量打满多条可达路径，避免单链路拥塞</td><td>RT 2bit；LBF 8bit；逐流=保序 / 逐包=带宽</td></tr>
+        <tr><td><b>TP Channel 组共享（TGPG）</b></td><td>传输层</td><td>多个 Initiator/Target 对复用同一批通道，带宽汇聚</td><td>多 TP Channel 统一调度</td></tr>
+        <tr><td><b>Jetty M2N</b></td><td>功能/事务层</td><td>连接对象从 O(N²) 降为 O(N)，资源池化</td><td>标准/单边/Jetty Group</td></tr>
+        <tr><td><b>Jetty Group 免 CPU 分发</b></td><td>功能层</td><td>Target 侧按 Hint-hash/RR/RQ 深度分发，不耗 CPU</td><td>RQ Group；NUMA 亲和</td></tr>
+        <tr><td><b>16 虚拟通道 VL</b></td><td>链路层</td><td>隔离流量类别 + 环状拓扑 VL 切换防死锁</td><td>VL0~VL15</td></tr>
+        <tr><td><b>信用流控</b></td><td>链路层</td><td>接收缓冲无损反压，防溢出</td><td>Cell=n×Flit (Flit=20B)；≤65535 Cells</td></tr>
+        <tr><td><b>拥塞标记</b></td><td>网络层</td><td>CAQM / FECN / FECN_RTT 三类标记，含拥塞扩散检测</td><td>FECN 2bit（轻/无/重）</td></tr>
+        <tr><td><b>拥塞控制算法</b></td><td>传输层</td><td>LDCP / CAQM / DCQCN 可选，建链协商</td><td>CETPH 反馈</td></tr>
+        <tr><td><b>死锁避免</b></td><td>网络层</td><td>路由/VL切换/超时丢包三组合</td><td>§5.3.6</td></tr>
+        <tr><td><b>UMMU 鉴权</b></td><td>旁路</td><td>Home 侧四步处理，任意 User 访任意 Home 可审计</td><td>TECT/TCT/MATT/MAPT</td></tr>
+        <tr><td><b>CCU 集合通信</b></td><td>硬件加速</td><td>Broadcast/AllGather/AllReduce/All2All(v) 卸载扇出</td><td>CCU MemorySlice + Reduce Unit</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===================== SECTION 9 术语表 ===================== -->
+  <h2 id="glossary"><span class="num">09</span>UB / 灵衢 术语表</h2>
+  <p class="intro">下表为《灵衢®基础规范 2.0》<strong>§1.5 术语定义</strong> 的精选整理（均核对 <code>lingqu_base_spec_zh.txt</code> 原文），
+  并补充了昇腾 950 白皮书独有的 <strong>CCU</strong> 系列术语（规范无此词）。点击分类标签可按类别筛选。</p>
+
+  <div class="card">
+    <div class="glossary-filter" id="glossary-filter">
+      <span class="gchip active" data-cat="all">全部</span>
+      <span class="gchip" data-cat="sys">系统组成</span>
+      <span class="gchip" data-cat="net">网络/传输层</span>
+      <span class="gchip" data-cat="tx">事务/功能层</span>
+      <span class="gchip" data-cat="mem">内存/鉴权</span>
+      <span class="gchip" data-cat="hw">芯片硬件（950）</span>
+      <span class="gchip" data-cat="sec">安全</span>
+    </div>
+
+    <table class="glossary">
+      <thead>
+        <tr><th style="width:190px;">术语</th><th>定义（规范出处）</th><th style="width:12%;">分类</th></tr>
+      </thead>
+      <tbody>
+        <!-- 系统组成 -->
+        <tr data-cat="sys"><td class="term">UnifiedBus / 灵衢 <span class="en">UB</span></td><td>一种面向超节点的互联协议，简称 UB。</td><td>系统组成</td></tr>
+        <tr data-cat="sys"><td class="term">UB 系统 / 灵衢系统 <span class="en">UB System</span></td><td>基于灵衢建立的计算系统，部署范围从单台服务器到全数据中心；所有处理单元地位平等、资源均可池化。</td><td>系统组成</td></tr>
+        <tr data-cat="sys"><td class="term">UB 域 <span class="en">UB Domain</span></td><td>一个全部使用 UB Link 连接起来的 UBPU 集合。</td><td>系统组成</td></tr>
+        <tr data-cat="sys"><td class="term">UB 处理单元 <span class="en">UBPU</span></td><td>支持 UB 协议栈的处理单元，实现特定功能（计算/数据存储/交换）。</td><td>系统组成</td></tr>
+        <tr data-cat="sys"><td class="term">UB 控制器 <span class="en">UB Controller</span></td><td>UBPU 中执行 UB 协议栈的组件，并提供软硬件接口。</td><td>系统组成</td></tr>
+        <tr data-cat="sys"><td class="term">UB 交换机 <span class="en">UB Switch</span></td><td>UBPU 中的可选组件，支持在 UB 端口间转发包。</td><td>系统组成</td></tr>
+        <tr data-cat="sys"><td class="term">UB 链路 <span class="en">UB Link</span></td><td>两个端口及相连的若干条 TX Lane / RX Lane 的集合；TX 与 RX 数量可不一致（非对称链路）。</td><td>系统组成</td></tr>
+        <tr data-cat="sys"><td class="term">UB 互连结构 <span class="en">UB Fabric</span></td><td>UB Domain 内所有 UB Switch 和 UB Link 的集合。</td><td>系统组成</td></tr>
+        <tr data-cat="sys"><td class="term">域管理者 <span class="en">UBFM</span></td><td>UB Domain 的管理者，负责系统内计算资源管理、互连资源管理和通信管理；可按域规模部署多实例。</td><td>系统组成</td></tr>
+        <tr data-cat="sys"><td class="term">以太网承载 UB <span class="en">UBoE</span></td><td>通过以太/IP 网络传输 UB 事务的方式，包可被 IP 网络路由，实现跨 UB Domain 互通。</td><td>系统组成</td></tr>
+
+        <!-- 网络/传输层 -->
+        <tr data-cat="net"><td class="term">微片 <span class="en">Flit</span></td><td>组成数据链路层包的基本单位，长度 20 字节。</td><td>网络/传输层</td></tr>
+        <tr data-cat="net"><td class="term">信元 <span class="en">Cell</span></td><td>信用证的基本单元，用于信用流控；1 Cell = n×Flit。</td><td>网络/传输层</td></tr>
+        <tr data-cat="net"><td class="term">数据链路层数据块 <span class="en">DLLDB</span></td><td>组成数据链路层数据包的数据单位，长度 1~32 个 Flits。</td><td>网络/传输层</td></tr>
+        <tr data-cat="net"><td class="term">简要网络地址 <span class="en">CNA</span></td><td>支持 16 bit 和 24 bit 两种格式的网络地址。</td><td>网络/传输层</td></tr>
+        <tr data-cat="net"><td class="term">轻量级传输模式 <span class="en">CTP</span></td><td>传输层模式，借助下层协议共同提供可靠和拥塞控制的传输服务（无端到端重传）。</td><td>网络/传输层</td></tr>
+        <tr data-cat="net"><td class="term">可靠传输模式 <span class="en">RTP</span></td><td>传输层模式，提供端到端可靠无冗余传输服务。</td><td>网络/传输层</td></tr>
+        <tr data-cat="net"><td class="term">不可靠传输模式 <span class="en">UTP</span></td><td>传输层模式，提供不可靠的传输服务。</td><td>网络/传输层</td></tr>
+        <tr data-cat="net"><td class="term">传输通道 <span class="en">TP Channel</span></td><td>两个传输端点间建立的端到端连接，为事务层提供端到端可靠通信。</td><td>网络/传输层</td></tr>
+        <tr data-cat="net"><td class="term">传输通道组 <span class="en">TPG</span></td><td>多个传输通道的组合，实现流量在多个传输通道间的负载均衡。</td><td>网络/传输层</td></tr>
+        <tr data-cat="net"><td class="term">传输端点 <span class="en">TPEP</span></td><td>参与传输层通信的端点，用于发送和接收各种传输层包。</td><td>网络/传输层</td></tr>
+        <tr data-cat="net"><td class="term">传输层最大传输单元 <span class="en">MTU</span></td><td>UB 传输层 packet 能够承载的最大事务层净荷大小。</td><td>网络/传输层</td></tr>
+        <tr data-cat="net"><td class="term">网络分区 <span class="en">NPI</span></td><td>一组 IP 网络接口设备的集合，不同网络分区之间的网络通信隔离。</td><td>网络/传输层</td></tr>
+
+        <!-- 事务/功能层 -->
+        <tr data-cat="tx"><td class="term">实体 <span class="en">Entity</span></td><td>设备分配其自身资源的基本单元，每个 Entity 都是 UB 域内的一个通信对象。</td><td>事务/功能层</td></tr>
+        <tr data-cat="tx"><td class="term">Entity 身份标识 <span class="en">EID</span></td><td>分配给 Entity 使用，唯一标识 Entity 的通信对象身份。</td><td>事务/功能层</td></tr>
+        <tr data-cat="tx"><td class="term">全局唯一身份标识 <span class="en">GUID</span></td><td>Entity 的永久身份标识，具备全局唯一性（与运行时 EID 相对）。</td><td>事务/功能层</td></tr>
+        <tr data-cat="tx"><td class="term">发起端 <span class="en">Initiator</span></td><td>发起事务请求的 Entity。</td><td>事务/功能层</td></tr>
+        <tr data-cat="tx"><td class="term">目的端 <span class="en">Target</span></td><td>接收并处理事务请求的 Entity。</td><td>事务/功能层</td></tr>
+        <tr data-cat="tx"><td class="term">通信码头 <span class="en">Jetty</span></td><td>URMA 基本通信单元，提供异步事务操作下发和执行能力，支持多对多和 1 对 1 等通信模式。</td><td>事务/功能层</td></tr>
+        <tr data-cat="tx"><td class="term">统一远程过程调用 <span class="en">URPC</span></td><td>基于 UB 事务层能力的函数访问协议，允许 UBPU 间直接进行远程平等函数调用。</td><td>事务/功能层</td></tr>
+        <tr data-cat="tx"><td class="term">可靠和发送端保序 <span class="en">ROI</span></td><td>可靠的、Initiator 完成事务保序的事务服务模式；事务层包可乱序传输。</td><td>事务/功能层</td></tr>
+        <tr data-cat="tx"><td class="term">可靠和目的端保序 <span class="en">ROT</span></td><td>可靠的、Target 完成事务保序的事务服务模式。</td><td>事务/功能层</td></tr>
+        <tr data-cat="tx"><td class="term">可靠和下层保序 <span class="en">ROL</span></td><td>可靠的、由下层协议完成事务保序的事务服务模式。</td><td>事务/功能层</td></tr>
+        <tr data-cat="tx"><td class="term">不可靠无保序 <span class="en">UNO</span></td><td>不可靠的、无事务序事务服务模式；事务层包可乱序传输。</td><td>事务/功能层</td></tr>
+
+        <!-- 内存/鉴权 -->
+        <tr data-cat="mem"><td class="term">待访问方 <span class="en">Home</span></td><td>Home-User 访问模型中内存的拥有者。</td><td>内存/鉴权</td></tr>
+        <tr data-cat="mem"><td class="term">访问方 <span class="en">User</span></td><td>Home-User 访问模型中的内存访问者。</td><td>内存/鉴权</td></tr>
+        <tr data-cat="mem"><td class="term">内存段 <span class="en">Memory Segment</span></td><td>一段连续地址的内存，是内存事务的基本操作对象，由全局唯一的 UBMD 标识。</td><td>内存/鉴权</td></tr>
+        <tr data-cat="mem"><td class="term">UB 地址 <span class="en">UBA</span></td><td>待访问方提供给访问发起方的地址，用于访问待访问方的内存段。</td><td>内存/鉴权</td></tr>
+        <tr data-cat="mem"><td class="term">UB 内存描述符 <span class="en">UBMD</span></td><td>包括 EID、TokenID 和 UBA，用于索引待访问方的物理地址。</td><td>内存/鉴权</td></tr>
+        <tr data-cat="mem"><td class="term">UB 内存管理单元 <span class="en">UMMU</span></td><td>将 UB 内存描述符转换为待访问方物理地址并进行权限校验的组件。</td><td>内存/鉴权</td></tr>
+        <tr data-cat="mem"><td class="term">UB 译码器 <span class="en">UB Decoder</span></td><td>负责将访问方物理地址转换为 UB 地址的硬件。</td><td>内存/鉴权</td></tr>
+        <tr data-cat="mem"><td class="term">令牌 <span class="en">Token</span></td><td>鉴别请求发起者能否访问目标内存或 Jetty 的凭据，含标识符 TokenID 与凭据值 TokenValue。</td><td>内存/鉴权</td></tr>
+        <tr data-cat="mem"><td class="term">统一远程内存访问 <span class="en">URMA</span></td><td>支持异步访问编程的高速通信库，提供异步内存访问和双边消息通信功能。</td><td>内存/鉴权</td></tr>
+        <tr data-cat="mem"><td class="term">UB 分区 <span class="en">UB Partition</span></td><td>一组 Entity 的集合，不同集合之间 UB 事务通信隔离。</td><td>内存/鉴权</td></tr>
+
+        <!-- 芯片硬件 -->
+        <tr data-cat="hw"><td class="term">集合通信单元 <span class="en">CCU</span></td><td><b>昇腾 950 白皮书术语（非 UB 规范）</b>：芯片集合通信处理引擎，接收 STARS 下发的集合通信任务，自行搬运、同步并完成归约计算。</td><td>芯片硬件（950）</td></tr>
+        <tr data-cat="hw"><td class="term">CCU 管理 <span class="en">CCUM</span></td><td>CCU Management：Mission 任务入口，软件编程与指令解析。</td><td>芯片硬件（950）</td></tr>
+        <tr data-cat="hw"><td class="term">CCU 代理 <span class="en">CCUA</span></td><td>CCU Agent：集成 MemorySlice（数据存储）与 Reduce Unit（归约计算）。</td><td>芯片硬件（950）</td></tr>
+        <tr data-cat="hw"><td class="term">任务调度器 <span class="en">STARS 2.0</span></td><td>第二代硬件调度器，调度 AIC/AIV/CPU/DVPP/SDMA/UB/CCU 等引擎；并发调度 ≤32 CCU 任务、≤64 UB Jetty。</td><td>芯片硬件（950）</td></tr>
+        <tr data-cat="hw"><td class="term">UB 片上交换 <span class="en">On-Chip Switch</span></td><td>单 IO Die 内 9 个 X4 端口转发；转发流量不进计算 Die、不占 DRAM 带宽。</td><td>芯片硬件（950）</td></tr>
+
+        <!-- 安全 -->
+        <tr data-cat="sec"><td class="term">可信执行环境 <span class="en">TEE</span></td><td>基于硬件级隔离及安全启动机制的计算环境，确保敏感应用数据与代码的机密性/完整性/真实性/不可否认性。</td><td>安全</td></tr>
+        <tr data-cat="sec"><td class="term">执行环境标识位 <span class="en">EE_bits</span></td><td>标识可信执行环境安全通信请求来源所处计算环境的安全状态。</td><td>安全</td></tr>
+        <tr data-cat="sec"><td class="term">配置空间 <span class="en">Configuration Space</span></td><td>存放设备能力、状态、配置等信息的设备存储区域，为软件提供 Entity 配置管理接口。</td><td>安全</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="foot">
+    <div class="src"><b>数据来源：</b>《灵衢®基础规范 2.0》（2025-09，541 页，<code>lingqu_base_spec_zh.txt</code>，关键出处 §1.5 术语定义 / §2.1 系统组成 / §2.2 / §4.5-4.6 / §5.2-5.3 / §6 / §8.2.2 / §9）；昇腾 950 白皮书（<code>ascend950_architecture_summary.md</code> §4.2-4.4 / §5.3，CCU 见 §4.6.4）。</div>
+    <div class="src">本页图例均为示意（非规范原图）；数据已核对规范原文。交互：点击图层/节点/阶段查看说明，点击 SVG 图形全屏预览。</div>
+    <div class="src">设计说明：所有 SVG 为自绘制，含可交互 <code>&lt;g&gt;</code> 语义层与 &lt;title&gt;（无障碍）；无需外部资源即可离线打开。</div>
+  </div>
+</div>
+
+<!-- lightbox -->
+<div id="lb">
+  <div class="stage">
+    <div class="bar">
+      <span id="lb-title">预览</span>
+      <span class="close" id="lb-close" title="关闭">&times;</span>
+    </div>
+    <div id="lb-body"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(s){ return document.querySelector(s); };
+  var $$ = function(s){ return Array.prototype.slice.call(document.querySelectorAll(s)); };
+
+  /* ---------- 通用：交互层说明 + 全屏灯箱 ---------- */
+  var capMap = { 'sys-cap':'#svg-sys1', 'sys2-cap':'#svg-sys2', 'stack-cap':'#svg-stack', 'chip-cap':'#svg-chip', 'm2n-cap':'#svg-m2n', 'seq-cap':'#svg-seq', 'ummu-cap':'#svg-ummu', 'ccu-cap':'#svg-ccu' };
+  Object.keys(capMap).forEach(function(id){
+    var cap = document.getElementById(id);
+    var svg = document.querySelector(capMap[id]);
+    if(!cap || !svg) return;
+    svg.querySelectorAll('.layer,.chip-blk,.jnode,.m2n-link,.port-links,.seqbox,.ummu-blk').forEach(function(el){
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        cap.innerHTML = '<b>' + (el.getAttribute('data-name') || '元素') + '</b>：' + (el.getAttribute('data-cap') || '');
+        cap.style.color = '#e7edf8';
+      });
+    });
+  });
+
+  /* lightbox: click any svg to open fullscreen clone */
+  var lb = $('#lb'), lbBody = $('#lb-body'), lbTitle = $('#lb-title');
+  function openLb(svg, title){
+    var clone = svg.cloneNode(true);
+    clone.removeAttribute('id');
+    clone.style.width = '100%';
+    clone.style.height = 'auto';
+    lbBody.innerHTML = '';
+    lbBody.appendChild(clone);
+    lbTitle.textContent = title || '预览';
+    lb.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeLb(){ lb.classList.remove('open'); document.body.style.overflow=''; }
+  $$('svg[id^="svg-"]').forEach(function(svg){
+    svg.addEventListener('click', function(){
+      var t = svg.getAttribute('aria-label') || '预览';
+      openLb(svg, t);
+    });
+  });
+  lb.addEventListener('click', function(e){ if(e.target === lb) closeLb(); });
+  $('#lb-close').addEventListener('click', closeLb);
+  document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeLb(); });
+
+  /* ---------- 拓扑图像渲染器 ---------- */
+  var stage = $('#svg-topo');
+  var topo = 'mesh';
+  var meshN = 3, closK = 2, torusN = 3;
+  var meshSl = $('#slider-mesh-row'), closSl = $('#slider-clos-row'), torusSl = $('#slider-torus-row');
+  var infoEl = $('#topo-info');
+
+  function setInfo(html){
+    infoEl.innerHTML = html;
+    infoEl.style.color = '#e7edf8';
+  }
+  function resetInfo(t){
+    var m = {mesh:'Mesh：节点直连网格，无需交换单元，短距多对多直连。维度 N 越大直径越大、通道越拥塞。',
+             clos:'Clos/Fat-Tree：顶层交换连接叶子组，任意叶子对可经顶层一跳/两跳互通（多基数交换）。',
+             torus:'Torus：给 Mesh 加环绕边，降低直径、提升对分带宽与容错，代价是长绕环链路与死锁管理。'};
+    setInfo('<b>' + t + '</b>：' + m[t] + '（点击节点/链路查看详情）');
+  }
+
+  function drawTopo(){
+    var w = 1080, h = 540;
+    var svg = '';
+    var ns = 'http://www.w3.org/2000/svg';
+
+    if(topo === 'mesh'){ svg = drawMesh(w,h); }
+    else if(topo === 'clos'){ svg = drawClos(w,h); }
+    else if(topo === 'torus'){ svg = drawTorus(w,h); }
+
+    stage.innerHTML = svg;
+
+    /* attach interactions */
+    stage.querySelectorAll('.tnode,.tedge').forEach(function(el){
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        var t = el.getAttribute('data-title') || '元素';
+        var c = el.getAttribute('data-cap') || '';
+        setInfo('<b>' + t + '</b>：' + c);
+      });
+    });
+    resetInfo(topo);
+  }
+
+  function node(x,y,label,kind,title,cap,hl){
+    var fill = kind==='switch' ? '#12b886' : '#1273e8';
+    var fill2 = kind==='switch' ? '#0c8e68' : '#0d5abf';
+    var r = kind==='switch' ? 15 : 16;
+    var hover = ' onmouseover="this.setAttribute(\'filter\',\'drop-shadow(0 0 8px rgba(63,162,255,.9))\')" onmouseout="this.removeAttribute(\'filter\')"';
+    var ring = '';
+    if(hl){ ring = '<circle cx="'+x+'" cy="'+y+'" r="'+(r+5)+'" fill="none" stroke="#f59e0b" stroke-width="2" class="fsrc"/>'; }
+    return '<g class="tnode" data-title="'+title+'" data-cap="'+cap+'"'+hover+'>' +
+      ring +
+      '<circle cx="'+x+'" cy="'+y+'" r="'+r+'" fill="'+fill+'" stroke="'+fill2+'" stroke-width="2"/>' +
+      '<text x="'+x+'" y="'+(y+3.5)+'" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">'+label+'</text>' +
+      '</g>';
+  }
+  function edge(x1,y1,x2,y2,title,cap,hl){
+    var col = hl ? '#f59e0b' : '#3fa2ff';
+    var wdt = hl ? 2.6 : 1.6;
+    var cl = hl ? 'tedge flowpath' : 'tedge';
+    return '<g class="'+cl+'" data-title="'+title+'" data-cap="'+cap+'">' +
+      '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="'+col+'" stroke-width="'+wdt+'" stroke-opacity="'+(hl?0.98:0.45)+'" stroke-linecap="round"/>' +
+      '</g>';
+  }
+  function metric(html){ return '<text x="30" y="'+(540)-6+'" font-size="11" fill="#7f90ad">'+html+'</text>'; }
+
+  function drawMesh(w,h){
+    var n = meshN;
+    var s = '';
+    var margin = 70, gapX = (w-2*margin)/(n-1), gapY = (h-2*margin-70)/(n-1);
+    function p(i,j){ return {x: margin + i*gapX, y: margin + j*gapY}; }
+    // edges
+    for(var i=0;i<n;i++) for(var j=0;j<n;j++){
+      var a = p(i,j);
+      if(i+1<n){ var b=p(i+1,j); s += edge(a.x,a.y,b.x,b.y,'Mesh 横向链路','点对点链路；维度序路由沿 X 维推进（node'+i+j+'→'+(i+1)+j+'）。'); }
+      if(j+1<n){ var c=p(i,j+1); s += edge(a.x,a.y,c.x,c.y,'Mesh 纵向链路','点对点链路；维度序路由沿 Y 维推进。'); }
+    }
+    // 高亮：边缘节点(0,0)→对角(n-1,n-1)，维度序
+    var px=p(0,0).x, py=p(0,0).y;
+    for(var k=0;k<n-1;k++){ var nx=margin+(k+1)*gapX; s += edge(px,py,nx,py,'高亮路径（维度序路由）','沿 X 维逐跳到达 (n-1,0)。逐包模式可打满多路径。',true); px=nx; }
+    for(var k=0;k<n-1;k++){ var ny=margin+(k+1)*gapY; s += edge(px,py,px,ny,'高亮路径（维度序路由）','沿 Y 维逐跳到达 (n-1,n-1)。',true); py=ny; }
+    for(var i=0;i<n;i++) for(var j=0;j<n;j++){
+      var a = p(i,j);
+      var isSrc=(i===0&&j===0), isDst=(i===n-1&&j===n-1);
+      var cap=(isSrc?'★源节点（Initiator 发起多对多流量）':isDst?'★目的节点（Target 收敛多对多流量）':'普通节点：')+'UBPU 细粒度：节点间为 UB Link，每跳经 UB Switch 转发。';
+      s += node(a.x,a.y, i+''+j,'node','节点 '+i+j, cap, isSrc||isDst);
+    }
+    s += metric(n+'×'+n+' Mesh · '+n*n+' 节点 · 直径 '+(2*(n-1))+' 跳 · 度 2(d-1)='+(2*2-2)+' · 适合模块化配线（无交换）');
+    return s;
+  }
+
+  function drawClos(w,h){
+    var k = closK; // 每 PoD 的叶/脊端口基数
+    var s = '';
+    // 2 层 Folded-Clos：k 个 Spine + k 个 Leaf；每个 Leaf 有 k 个计算节点
+    var spineCount = k;
+    var leafCount = k;
+    var nodesPerLeaf = k;
+    // 布局：叶子在下方 x 均布，spine 在上方 x 均布，计算节点挂叶子下方
+    var leafXs = [], spineXs = [];
+    var LM = 130, TM = 60;
+    for(var i=0;i<leafCount;i++){ leafXs.push(140 + i*((w-280)/(leafCount-1||1))); }
+    for(var i=0;i<spineCount;i++){ spineXs.push(140 + i*((w-280)/(spineCount-1||1))); }
+    var spineY = 100, leafY = 300;
+    // spine-leaf 全互联
+    for(var si=0;si<spineCount;si++) for(var li=0;li<leafCount;li++){
+      s += edge(spineXs[si], spineY, leafXs[li], leafY, 'Clos 叶-脊链路','每个 Spine 连每个 Leaf（Folded-Clos 全互联）；任意 Leaf 对经任一 Spine 一跳互通。');
+    }
+    // 计算节点挂 leaf
+    for(var li=0;li<leafCount;li++){
+      var lx = leafXs[li];
+      var step = (nodesPerLeaf>1)? 110 : 0;
+      for(var p=0;p<nodesPerLeaf;p++){
+        var nx = lx + (p-(nodesPerLeaf-1)/2)*step;
+        var ny = leafY + 90;
+        s += edge(lx, leafY, nx, ny, '叶子接入链路','计算节点（UBPU）接入叶子交换；多对多流量从这些节点注入。');
+        s += node(nx, ny, 'N'+(li*nodesPerLeaf+p), 'node', '计算节点 N'+(li*nodesPerLeaf+p), 'UBPU 计算节点，多对多 Initiator/Target。');
+      }
+    }
+    // highlight: N0 -> N(k²-1) 经 spine
+    s += edge(spineXs[0], spineY, leafXs[0], leafY, '高亮：叶-脊-叶跨 PoD 路径','N0 的 Leaf0 → Spine0', true);
+    s += edge(spineXs[0], spineY, leafXs[leafCount-1], leafY, '高亮：跨 PoD 路径','Spine0 → 目的 Leaf('+(leafCount-1)+')', true);
+    // spine/leaf 节点
+    for(var si=0;si<spineCount;si++){ s += node(spineXs[si], spineY, 'S'+si, 'switch', 'Spine S'+si, '顶层交换（UB Switch）。Folded-Clos：Spine 数 = Leaf 数 = k。'); }
+    for(var li=0;li<leafCount;li++){ s += node(leafXs[li], leafY, 'L'+li, 'switch', 'Leaf L'+li, '叶子交换（UB Switch）。每 Leaf 接入 '+nodesPerLeaf+' 个计算节点。'); }
+    s += metric(k+'-ary Folded-Clos · '+spineCount+' Spine × '+leafCount+' Leaf × '+nodesPerLeaf+' 节点 = '+ (leafCount*nodesPerLeaf) +' 计算节点 · 叶-脊间 '+spineCount+' 条等价多路径');
+    return s;
+  }
+
+  function drawTorus(w,h){
+    var n = torusN;
+    var margin = 80, gapX = (w-2*margin)/(n-1), gapY = (h-2*margin-70)/(n-1);
+    var s = '';
+    // wrap edges first (background)
+    var m = n;
+    function p(i,j){ return {x: margin + i*gapX, y: margin + j*gapY}; }
+    // 环绕边用弧线，避免与网格线重叠
+    for(var j=0;j<n;j++){
+      var a=p(0,j), b=p(n-1,j);
+      s += '<path d="M'+a.x+' '+a.y+' C '+(a.x-40)+' '+(a.y)+' '+(b.x+40)+' '+(b.y)+' '+b.x+' '+b.y+'" fill="none" stroke="#8b5cf6" stroke-width="1.3" stroke-dasharray="5 4" stroke-opacity="0.7" class="tedge" data-title="Torus 环绕边（X）" data-cap="首尾节点相连成环；环绕边提供低直径对分带宽（借道反方向缩短跳数）。"/>';
+    }
+    for(var i=0;i<n;i++){
+      var a=p(i,0), b=p(i,n-1);
+      s += '<path d="M'+a.x+' '+a.y+' C '+(a.x)+' '+(a.y-40)+' '+(b.x)+' '+(b.y+40)+' '+b.x+' '+b.y+'" fill="none" stroke="#8b5cf6" stroke-width="1.3" stroke-dasharray="5 4" stroke-opacity="0.7" class="tedge" data-title="Torus 环绕边（Y）" data-cap="首尾节点相连成环；环绕边提供低直径对分带宽。"/>';
+    }
+    // grid edges
+    for(var i=0;i<n;i++) for(var j=0;j<n;j++){
+      var a=p(i,j);
+      if(i+1<n){ var b=p(i+1,j); s += edge(a.x,a.y,b.x,b.y,'Torus 环内链路','环面内相邻链路（X 方向）。'); }
+      if(j+1<n){ var c=p(i,j+1); s += edge(a.x,a.y,c.x,c.y,'Torus 环内链路','环面内相邻链路（Y 方向）。'); }
+    }
+    // highlight: (0,0) → (n-1,n-1) 维度序
+    var px=p(0,0).x, py=p(0,0).y;
+    for(var k=0;k<n-1;k++){ var nx=margin+(k+1)*gapX; s += edge(px,py,nx,py,'高亮路径（维度序 X）','沿 X 维推进。Torus 依赖维度序路由 + VL 切换防死锁。',true); px=nx; }
+    for(var k=0;k<n-1;k++){ var ny=margin+(k+1)*gapY; s += edge(px,py,px,ny,'高亮路径（维度序 Y）','沿 Y 维推进到目的节点。',true); py=ny; }
+    for(var i=0;i<n;i++) for(var j=0;j<n;j++){
+      var a=p(i,j); var isSrc=(i===0&&j===0), isDst=(i===n-1&&j===n-1);
+      s += node(a.x,a.y, i+''+j,'node','节点 '+i+j, 'Torus 节点（UBPU）。环绕边闭合降低直径/提高对分带宽；依赖维度序路由 + VL 切换防死锁（§5.3.6）。', isSrc||isDst);
+    }
+    s += metric(n+'×'+n+' Torus · '+n*n+' 节点 · 直径 '+n+' 跳 · 对分带宽 ~2n 链路 · 需死锁避免（VL 切换）');
+    return s;
+  }
+
+  /* tabs */
+  $$('.ttab').forEach(function(tab){
+    tab.addEventListener('click', function(){
+      $$('.ttab').forEach(function(t){ t.classList.remove('active'); });
+      tab.classList.add('active');
+      topo = tab.getAttribute('data-topo');
+      meshSl.style.display = topo==='mesh' ? 'flex' : 'none';
+      closSl.style.display = topo==='clos' ? 'flex' : 'none';
+      torusSl.style.display = topo==='torus' ? 'flex' : 'none';
+      drawTopo();
+    });
+  });
+
+  /* sliders */
+  $('#slider-mesh').addEventListener('input', function(e){ meshN = +e.target.value; $('#mesh-val').textContent = meshN; drawTopo(); });
+  $('#slider-clos').addEventListener('input', function(e){ closK = +e.target.value; $('#clos-val').textContent = closK; drawTopo(); });
+  $('#slider-torus').addEventListener('input', function(e){ torusN = +e.target.value; $('#torus-val').textContent = torusN; drawTopo(); });
+
+  /* ---------- 术语表分类筛选 ---------- */
+  var gfilter = $('#glossary-filter');
+  if (gfilter) {
+    gfilter.querySelectorAll('.gchip').forEach(function(chip){
+      chip.addEventListener('click', function(){
+        gfilter.querySelectorAll('.gchip').forEach(function(c){ c.classList.remove('active'); });
+        chip.classList.add('active');
+        var cat = chip.getAttribute('data-cat');
+        document.querySelectorAll('table.glossary tbody tr[data-cat]').forEach(function(tr){
+          if (cat === 'all' || tr.getAttribute('data-cat') === cat) {
+            tr.classList.remove('hide');
+          } else {
+            tr.classList.add('hide');
+          }
+        });
+      });
+    });
+  }
+
+  /* initial draw */
+  drawTopo();
+})();
+</script>
+</body>
+</html>
