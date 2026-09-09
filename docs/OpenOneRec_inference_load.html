@@ -1,0 +1,2448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenOneRec · 架构与推理负载</title>
+<style>
+:root{
+  --bg:#0d1117; --bg2:#0b0e14; --panel:#161b22; --panel2:#1c2330;
+  --border:#2d333b; --border2:#3a4350;
+  --text:#c9d1d9; --muted:#8b949e; --dim:#6e7681;
+  --teal:#39c5cf; --teal2:#7fe0e6;
+  --blue:#58a6ff; --blue2:#9cc9ff;
+  --green:#3fb950; --green2:#7ee787;
+  --amber:#d29922; --amber2:#f0c674;
+  --orange:#f0883e; --orange2:#ffb387;
+  --purple:#bc8cff; --purple2:#d6bbff;
+  --red:#f85149; --red2:#ffb3a8;
+  --mono:'SF Mono','JetBrains Mono','Cascadia Code',Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;font-size:15px;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:
+  radial-gradient(1100px 560px at 12% -5%, rgba(88,166,255,.10), transparent 60%),
+  radial-gradient(1000px 560px at 88% 0%, rgba(240,136,62,.09), transparent 55%),
+  radial-gradient(900px 500px at 50% 112%, rgba(57,197,207,.07), transparent 60%)}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* nav */
+header{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);background:rgba(13,17,23,.84);border-bottom:1px solid var(--border)}
+.nav-inner{max-width:1400px;margin:0 auto;padding:10px 24px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15.5px;color:#fff;white-space:nowrap}
+.logo .dot{width:12px;height:12px;border-radius:4px;background:linear-gradient(135deg,var(--orange),var(--teal));box-shadow:0 0 12px var(--orange)}
+nav.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-left:6px}
+nav.tabs button{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 13px;border-radius:8px;cursor:pointer;font-size:13.5px;font-family:var(--sans);transition:.15s}
+nav.tabs button:hover{color:var(--text);background:var(--panel2)}
+nav.tabs button.active{color:#fff;background:var(--panel2);border-color:var(--border2)}
+.kbd{margin-left:auto;font-size:12px;color:var(--dim);font-family:var(--mono)}
+
+main{max-width:1400px;margin:0 auto;padding:28px 24px 80px}
+section{margin-bottom:70px;scroll-margin-top:86px}
+
+.hero{margin:8px 0 30px}
+.hero h1{margin:0 0 10px;font-size:33px;letter-spacing:-.5px;color:#fff;line-height:1.2}
+.hero h1 .grad{background:linear-gradient(90deg,var(--orange2),var(--amber2),var(--teal2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p.sub{color:var(--muted);max-width:980px;font-size:16px;margin:0 0 16px}
+.badges{display:flex;gap:10px;flex-wrap:wrap}
+.badge{border:1px solid var(--border2);background:var(--panel);border-radius:999px;padding:4px 13px;font-size:12.5px;font-family:var(--mono)}
+.badge b{color:var(--orange2)}
+
+.sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:8px}
+.sec-num{font-family:var(--mono);font-size:13px;color:var(--dim);border:1px solid var(--border2);border-radius:6px;padding:1px 8px}
+h2{font-size:22px;margin:0;color:#fff;letter-spacing:-.3px}
+.sec-desc{color:var(--muted);margin:6px 0 16px;max-width:980px}
+
+.svg-wrap{background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--border);border-radius:14px;padding:10px;margin:16px 0;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+svg{display:block;width:100%;height:auto}
+svg text{font-family:var(--sans)}
+svg .mono{font-family:var(--mono)}
+svg .lbl{fill:var(--text)}
+svg .muted{fill:var(--muted)}
+svg .dim{fill:var(--dim)}
+.nd{cursor:pointer;transition:filter .12s}
+.nd .box{transition:stroke .12s, filter .12s}
+.nd:hover .box{filter:brightness(1.14)}
+.nd.hilite .box{stroke:#fff!important;stroke-width:1.8!important}
+.flow{stroke:var(--muted);stroke-width:1.4;fill:none}
+.arrow{fill:var(--muted)}
+.tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.2px}
+
+/* metrics */
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:18px 0}
+.metric{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.metric .v{font-size:23px;font-weight:700;color:#fff;letter-spacing:-.5px}
+.metric .v small{font-size:12.5px;color:var(--muted)}
+.metric .l{color:var(--muted);font-size:12.5px;margin-top:3px}
+
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px}
+.lg{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:4px 10px;background:var(--panel)}
+.lg i{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+/* drawer */
+#drawer{position:fixed;right:0;top:0;bottom:0;width:min(460px,92vw);z-index:90;background:#0e1420f6;backdrop-filter:blur(10px);border-left:1px solid var(--border2);transform:translateX(105%);transition:transform .28s cubic-bezier(.2,.8,.2,1);padding:26px 24px;overflow-y:auto;box-shadow:-20px 0 50px rgba(0,0,0,.5)}
+#drawer.open{transform:translateX(0)}
+#drawer .close{position:absolute;top:12px;right:14px;background:transparent;border:1px solid var(--border2);color:var(--muted);border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:16px}
+#drawer .close:hover{color:#fff}
+#drawer .stage-chip{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 9px;border-radius:999px;margin-bottom:10px}
+#drawer h3{margin:0 0 8px;font-size:18px;color:#fff;line-height:1.35}
+#drawer .dsum{color:var(--muted);font-size:14px;margin:0 0 12px}
+#drawer ul{margin:0;padding-left:0;list-style:none}
+#drawer li{position:relative;padding:0 0 9px 20px;font-size:13.8px}
+#drawer li::before{content:"";position:absolute;left:2px;top:7px;width:7px;height:7px;border-radius:2px;background:var(--orange)}
+#drawer li b{color:#fff}
+#drawer .ref{margin-top:12px;padding:10px 12px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;font-family:var(--mono);font-size:12px;color:var(--muted);word-break:break-all}
+#drawer .ref b{color:var(--orange2)}
+
+/* tooltip */
+#tip{position:fixed;z-index:100;display:none;pointer-events:none;max-width:330px;background:#0f1420f2;border:1px solid var(--border2);border-radius:10px;padding:11px 13px;box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:13px;line-height:1.5}
+#tip h4{margin:0 0 5px;font-size:13.5px;color:#fff}
+#tip .t{color:var(--muted);font-size:12.5px}
+
+/* two-column */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+
+/* table */
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px;margin:10px 0}
+.tbl th,.tbl td{border:1px solid var(--border);padding:8px 11px;text-align:left;vertical-align:top}
+.tbl th{background:var(--panel2);color:#fff;font-weight:600;white-space:nowrap}
+.tbl td.mono{font-family:var(--mono);font-size:12.5px}
+.tbl tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+.tbl .stage{font-family:var(--mono);font-size:11px;color:var(--teal2)}
+.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:11.5px;font-family:var(--mono);border:1px solid}
+.pill.p1{color:var(--teal2);border-color:rgba(57,197,207,.4)}
+.pill.p2{color:var(--amber2);border-color:rgba(210,153,34,.4)}
+.pill.p3{color:var(--purple2);border-color:rgba(188,140,255,.4)}
+
+/* calculator */
+.calc{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:20px}
+.calc .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:16px}
+.calc label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+.calc label b{color:var(--blue2);font-family:var(--mono);font-weight:600}
+.calc input[type=range]{width:100%;accent-color:var(--orange)}
+.calc input[type=number]{width:100%;background:#0b0e14;border:1px solid var(--border2);border-radius:7px;color:#e6edf3;padding:7px 10px;font-family:var(--mono);font-size:14px}
+.calc .val{font-family:var(--mono);font-size:13px;color:var(--orange2)}
+.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:6px}
+.res{border:1px solid var(--border2);border-radius:10px;padding:12px 14px;background:#0b0e14}
+.res .rv{font-size:20px;font-weight:700;color:#fff;font-family:var(--mono)}
+.res .rl{font-size:11.5px;color:var(--muted);margin-top:3px}
+.res.warn .rv{color:var(--red2)}
+.res.ok .rv{color:var(--green2)}
+.res .bar{height:6px;border-radius:3px;background:var(--panel2);margin-top:8px;overflow:hidden}
+.res .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--orange),var(--amber))}
+.note{font-size:12.5px;color:var(--dim);margin-top:12px;line-height:1.55}
+
+footer{max-width:1400px;margin:0 auto;padding:20px 24px 50px;color:var(--dim);font-size:12.5px;border-top:1px solid var(--border)}
+.hint{font-size:12.5px;color:var(--dim);margin-top:8px}
+code{background:#0b0e14;border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-family:var(--mono);font-size:12.5px;color:var(--teal2)}
+.kicker{font-size:13px;color:var(--teal2);margin:22px 0 6px;font-weight:600;letter-spacing:.3px}
+.tbl td.hl{color:var(--teal2);font-weight:700}
+.tbl td.warn{color:var(--amber2);font-weight:600}
+.res.crit .rv{color:var(--red2)}
+.nd.hilite .box{stroke:#fff!important;stroke-width:1.8!important}
+.flow.thick{stroke-width:2}
+.tabs button.gp{margin-left:14px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="nav-inner">
+    <div class="logo"><span class="dot"></span>OpenOneRec · 架构与推理负载</div>
+    <nav class="tabs" id="tabs">
+      <button data-t="a0" class="active">总览</button>
+      <button data-t="a1">数据·词表</button>
+      <button data-t="a2">预训练</button>
+      <button data-t="a3">后训练</button>
+      <button data-t="a4">评测</button>
+      <button data-t="a5">模型家族</button>
+      <button data-t="s5" class="gp">部署架构</button>
+      <button data-t="s0">负载全景</button>
+      <button data-t="s1">任务特征</button>
+      <button data-t="s2">两阶段束搜索</button>
+      <button data-t="s3">瓶颈优化</button>
+      <button data-t="s6" class="gp">910B 硬件</button>
+      <button data-t="s7">预算表</button>
+      <button data-t="s8">显存预算</button>
+      <button data-t="s9">场景对比</button>
+      <button data-t="s4" class="gp">计算器</button>
+      <button data-t="s10">术语表</button>
+    </nav>
+    <span class="kbd">hover 提示 · 点击节点看源码依据</span>
+  </div>
+</header>
+
+<main>
+
+<!-- HERO -->
+<div class="hero">
+  <h1>OpenOneRec <span class="grad">架构 × 生成式推理负载</span> 深度解析</h1>
+  <p class="sub">
+    生成式推荐把「检索」变成「<strong>自回归生成候选 itemic token</strong>」。这意味着推理不再是向量内积，而是
+    <strong>prefill + decode</strong> 的编解码负载、<strong>KV cache 显存</strong>、以及「思维 CoT + 束搜索」叠加的算力放大。
+    前半部分拆解端到端架构流水线（Item as Tokens → 两阶段预训练 → SFT / On-Policy 蒸馏 → Rec-RL → 评测），后半部分基于 <code>verl_rl/recipe/onerec/</code> 与 <code>benchmarks/</code> 的真实参数，量化每条请求的负载构成，并给出优化方向。并基于 <strong>Ascend 910B</strong>（400 TFLOPS BF16 · 1.6 TB/s · 64 GB）给出吞吐/时延预算、显存预算与负载谱。
+  </p>
+  <div class="badges">
+    <span class="badge">Backbone <b>Qwen3 1.7B / 8B</b></span>
+    <span class="badge">Ctx <b>prompt 10K · 训练 32K</b></span>
+    <span class="badge">推理引擎 <b>vLLM（rollout/eval）</b></span>
+    <span class="badge">编排 <b>Ray · 单控制器</b></span>
+    <span class="badge">训练并行 <b>FSDP2 · TP=1</b></span>
+    <span class="badge">候选 <b>beam 32 · 128 序列</b></span>
+    <span class="badge">Itemic 输出 <b>3 token</b></span>
+    <span class="badge">硬件 <b>Ascend 910B · 400 TFLOPS</b></span>
+  </div>
+</div>
+
+<div class="metrics">
+  <div class="metric"><div class="v">10,240</div><div class="l">训练 max_prompt_length（RL）</div></div>
+  <div class="metric"><div class="v">32,768</div><div class="l">预训练 32K 上下文窗口</div></div>
+  <div class="metric"><div class="v">128</div><div class="l">推荐任务 num_return_sequences</div></div>
+  <div class="metric"><div class="v">32 / 16</div><div class="l">束搜索宽度（eval 32 · 默认 16）</div></div>
+  <div class="metric"><div class="v">≤1024</div><div class="l">Stage1 思维 CoT 上限</div></div>
+  <div class="metric"><div class="v">3 token</div><div class="l">itemic 输出（s_a/s_b/s_c）</div></div>
+</div>
+
+<div class="legend">
+  <span class="lg"><i style="background:var(--purple)"></i>编解码负载态（prefill/decode）</span>
+  <span class="lg"><i style="background:var(--blue)"></i>显存态（KV cache）</span>
+  <span class="lg"><i style="background:var(--orange)"></i>候选放大态（beam/采样）</span>
+  <span class="lg"><i style="background:var(--green)"></i>优化手段</span>
+</div>
+
+<!-- ============================ 0 总览 ============================ -->
+<section id="a0">
+  <div class="sec-head"><span class="sec-num">01</span><h2>总览 · 端到端流水线</h2></div>
+  <p class="sec-desc">
+    一条主线五个宏模块。点击任意模块跳转到对应细节图，点击其中深色子节点在右侧抽屉查看源码级说明。
+  </p>
+
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 500" role="img" aria-label="OpenOneRec overall pipeline">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+      <linearGradient id="g-teal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a5a5c"/><stop offset="1" stop-color="#14262b"/></linearGradient>
+      <linearGradient id="g-blue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1f4d75"/><stop offset="1" stop-color="#12253a"/></linearGradient>
+      <linearGradient id="g-post" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a3a55"/><stop offset="1" stop-color="#16192a"/></linearGradient>
+      <linearGradient id="g-model" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4b3a63"/><stop offset="1" stop-color="#1d1730"/></linearGradient>
+      <linearGradient id="g-eval" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d2c5e"/><stop offset="1" stop-color="#1a1230"/></linearGradient>
+    </defs>
+
+    <!-- title band -->
+    <text x="24" y="36" font-size="20" font-weight="700" fill="#fff">OneRec-Foundation 整体框架</text>
+    <text x="600" y="36" font-size="12" fill="#8b949e">图 2 · The Overall Framework of OneRec-Foundation（重绘）</text>
+
+    <!-- ===== 1 数据词表 ===== -->
+    <g class="nd" data-scroll="s1" transform="translate(20,64)">
+      <rect class="box" width="236" height="372" rx="14" fill="url(#g-teal)" stroke="#39c5cf" stroke-width="1.4"/>
+      <text x="18" y="30" font-size="15" font-weight="700" fill="#7fe0e6">① 数据 · 词表</text>
+      <text x="18" y="50" font-size="11" fill="#9ad8dc" class="tag">Data &amp; Itemic Tokenizer</text>
+      <line x1="18" y1="62" x2="218" y2="62" stroke="#39c5cf" stroke-opacity=".3"/>
+      <g data-id="node-embed">
+        <rect x="14" y="74" width="208" height="42" rx="8" fill="#16333a" stroke="#2e5a60"/>
+        <text x="26" y="94" font-size="12.5" fill="#e6f7f8">Qwen3-8B-Embedding</text>
+        <text x="26" y="108" font-size="11" class="muted">语义向量 4096 维</text>
+      </g>
+      <g data-id="node-rq">
+        <rect x="14" y="124" width="208" height="52" rx="8" fill="#16333a" stroke="#2e5a60"/>
+        <text x="26" y="144" font-size="12.5" fill="#e6f7f8">RQ-Kmeans 残差量化</text>
+        <text x="26" y="159" font-size="11" class="muted">3 层 × 8192 码本</text>
+        <text x="26" y="172" font-size="11" class="muted">→ &lt;s_a&gt;&lt;s_b&gt;&lt;s_c&gt;</text>
+      </g>
+      <g data-id="node-corpora">
+        <rect x="14" y="184" width="208" height="64" rx="8" fill="#16333a" stroke="#2e5a60"/>
+        <text x="26" y="204" font-size="12.5" fill="#e6f7f8">三类推荐语料</text>
+        <text x="26" y="219" font-size="11" class="muted">Dense Caption · 序列行为</text>
+        <text x="26" y="232" font-size="11" class="muted">· 交错用户画像</text>
+      </g>
+      <g data-id="node-general">
+        <rect x="14" y="256" width="208" height="42" rx="8" fill="#16333a" stroke="#2e5a60"/>
+        <text x="26" y="276" font-size="12.5" fill="#e6f7f8">通用文本语料</text>
+        <text x="26" y="290" font-size="11" class="muted">代码 / STEM / 医学（多语言）</text>
+      </g>
+      <g data-id="node-vocab">
+        <rect x="14" y="306" width="208" height="54" rx="8" fill="#132a30" stroke="#39c5cf"/>
+        <text x="26" y="326" font-size="12.5" fill="#c9f4f5">词表扩展</text>
+        <text x="26" y="341" font-size="11" class="muted">+3×8192 + 2 特殊 token</text>
+        <text x="26" y="354" font-size="11" class="muted">对齐至 256 倍数</text>
+      </g>
+    </g>
+    <path class="flow thick" d="M256,250 L276,250" marker-end="url(#arr)"/>
+
+    <!-- ===== 2 预训练 ===== -->
+    <g class="nd" data-scroll="s2" transform="translate(286,64)">
+      <rect class="box" width="250" height="372" rx="14" fill="url(#g-blue)" stroke="#58a6ff" stroke-width="1.4"/>
+      <text x="18" y="30" font-size="15" font-weight="700" fill="#9cc9ff">② 预训练 Pre-Training</text>
+      <line x1="18" y1="42" x2="234" y2="42" stroke="#58a6ff" stroke-opacity=".3"/>
+      <g data-id="node-stg1">
+        <rect x="14" y="56" width="222" height="120" rx="8" fill="#15283f" stroke="#3d6a9c"/>
+        <text x="26" y="76" font-size="12.5" font-weight="700" fill="#cfe4ff">Stage 1 · Itemic-Text 对齐</text>
+        <text x="26" y="92" font-size="11" class="muted">冻结 LLM 全部参数</text>
+        <text x="26" y="106" font-size="11" class="muted">仅训练 itemic embedding</text>
+        <text x="26" y="120" font-size="11" class="muted">（大模型含输出投影）</text>
+        <text x="26" y="136" font-size="11" class="mono" fill="#9cc9ff">高斯初始化(μ,Σ) lr=1e-3</text>
+        <text x="26" y="152" font-size="11" class="muted">tied embeddings：0.6/1.7/4B</text>
+      </g>
+      <text x="118" y="196" text-anchor="middle" font-size="13" fill="#8f9fb0">▼ 全部解冻</text>
+      <g data-id="node-stg2">
+        <rect x="14" y="208" width="222" height="152" rx="8" fill="#15283f" stroke="#3d6a9c"/>
+        <text x="26" y="228" font-size="12.5" font-weight="700" fill="#cfe4ff">Stage 2 · 全参数 Co-Pretrain</text>
+        <text x="26" y="244" font-size="11" class="muted">推荐语料 ⊕ 通用语料混合</text>
+        <text x="26" y="258" font-size="11" class="muted">对抗灾难性遗忘</text>
+        <text x="26" y="274" font-size="11" class="mono" fill="#9cc9ff">ctx=32K · lr=1e-4</text>
+        <text x="26" y="290" font-size="11" class="mono" fill="#9cc9ff">AdamW β=(.9,.95) wd=.1</text>
+        <text x="26" y="306" font-size="11" class="muted">cosine + 10% warmup</text>
+        <text x="26" y="326" font-size="11" class="mono" fill="#9cc9ff">Standard 32B · Pro 130B</text>
+      </g>
+    </g>
+    <path class="flow thick" d="M536,250 L556,250" marker-end="url(#arr)"/>
+
+    <!-- ===== 3 后训练 ===== -->
+    <g class="nd" data-scroll="s3" transform="translate(566,64)">
+      <rect class="box" width="250" height="372" rx="14" fill="url(#g-post)" stroke="#a18fce" stroke-width="1.4"/>
+      <text x="18" y="30" font-size="15" font-weight="700" fill="#cbb9f5">③ 后训练 Post-Training</text>
+      <line x1="18" y1="42" x2="234" y2="42" stroke="#a18fce" stroke-opacity=".3"/>
+      <g data-id="node-sft">
+        <rect x="14" y="56" width="222" height="74" rx="8" fill="#1c2b22" stroke="#3fb950"/>
+        <text x="26" y="76" font-size="12.5" font-weight="700" fill="#a6f3b6">Stage 1 · 多任务 SFT</text>
+        <text x="26" y="92" font-size="11" class="muted">8 推荐任务 + 通用推理</text>
+        <text x="26" y="106" font-size="11" class="muted">/think · /no_think 思维控制</text>
+        <text x="26" y="119" font-size="11" class="mono" fill="#7ee787">lr 2e-5 → 5e-6</text>
+      </g>
+      <g data-id="node-distill">
+        <rect x="14" y="142" width="222" height="92" rx="8" fill="#2e2616" stroke="#d29922"/>
+        <text x="26" y="162" font-size="12.5" font-weight="700" fill="#f4dd9a">Stage 2 · On-Policy 蒸馏</text>
+        <text x="26" y="178" font-size="11" class="muted">教师 = 同尺寸 Qwen3</text>
+        <text x="26" y="192" font-size="11" class="muted">reward = clip(−reverseKL)</text>
+        <text x="26" y="206" font-size="11" class="muted">恢复通用推理 · 防遗忘</text>
+        <text x="26" y="219" font-size="11" class="mono" fill="#f0c674">itemic 截断 + 高温探索</text>
+      </g>
+      <g data-id="node-rl">
+        <rect x="14" y="246" width="222" height="112" rx="8" fill="#331f15" stroke="#f0883e"/>
+        <text x="26" y="266" font-size="12.5" font-weight="700" fill="#ffcfa8">Stage 3 · Rec-RL (GRPO)</text>
+        <text x="26" y="282" font-size="11" class="muted">规则奖励：命中 itemic = +1</text>
+        <text x="26" y="296" font-size="11" class="muted">Two-Stage 生成 + Beam Search</text>
+        <text x="26" y="310" font-size="11" class="muted">KL 约束于 π_ref 防退化</text>
+        <text x="26" y="324" font-size="11" class="mono" fill="#ffb387">β KL · adv=GRPO</text>
+      </g>
+    </g>
+    <path class="flow thick" d="M816,250 L836,250" marker-end="url(#arr)"/>
+
+    <!-- ===== 4 模型 ===== -->
+    <g class="nd" data-scroll="s5" transform="translate(846,64)">
+      <rect class="box" width="208" height="372" rx="14" fill="url(#g-model)" stroke="#bc8cff" stroke-width="1.4"/>
+      <text x="18" y="30" font-size="15" font-weight="700" fill="#d6bbff">④ OneRec-Foundation</text>
+      <line x1="18" y1="42" x2="190" y2="42" stroke="#bc8cff" stroke-opacity=".3"/>
+      <g data-id="node-model">
+        <rect x="14" y="56" width="180" height="96" rx="8" fill="#241b34" stroke="#6a54a8"/>
+        <text x="26" y="76" font-size="12.5" font-weight="700" fill="#e9ddff">OneRec-1.7B</text>
+        <text x="26" y="92" font-size="11" class="muted">Standard 32B / Pro 130B</text>
+        <text x="26" y="108" font-size="11" class="muted">tied embeddings</text>
+        <text x="26" y="124" font-size="11" class="muted">Qwen3-1.7B 骨干</text>
+      </g>
+      <g data-id="node-model8">
+        <rect x="14" y="162" width="180" height="96" rx="8" fill="#241b34" stroke="#6a54a8"/>
+        <text x="26" y="182" font-size="12.5" font-weight="700" fill="#e9ddff">OneRec-8B</text>
+        <text x="26" y="198" font-size="11" class="muted">Standard 32B / Pro 130B</text>
+        <text x="26" y="214" font-size="11" class="muted">independent 输出投影</text>
+        <text x="26" y="230" font-size="11" class="muted">Qwen3-8B 骨干</text>
+      </g>
+      <g data-id="node-sota">
+        <rect x="14" y="270" width="180" height="76" rx="8" fill="#241b34" stroke="#bc8cff"/>
+        <text x="26" y="290" font-size="12" font-weight="700" fill="#e9ddff">RecIF-Bench 全面 SOTA</text>
+        <text x="26" y="306" font-size="11" class="muted">显著超越 LC-Rec / TIGER</text>
+        <text x="26" y="322" font-size="11" class="mono" fill="#d6bbff">架构严格等于 Qwen3</text>
+      </g>
+    </g>
+    <path class="flow thick" d="M1054,250 L1074,250" marker-end="url(#arr)"/>
+
+    <!-- ===== 5 评测 ===== -->
+    <g class="nd" data-scroll="s4" transform="translate(1084,64)">
+      <rect class="box" width="214" height="372" rx="14" fill="url(#g-eval)" stroke="#bc8cff" stroke-width="1.4"/>
+      <text x="18" y="30" font-size="15" font-weight="700" fill="#d6bbff">⑤ 评测 Evaluation</text>
+      <line x1="18" y1="42" x2="196" y2="42" stroke="#bc8cff" stroke-opacity=".3"/>
+      <g data-id="node-recif">
+        <rect x="14" y="56" width="186" height="168" rx="8" fill="#241a38" stroke="#6a54a8"/>
+        <text x="26" y="76" font-size="12.5" font-weight="700" fill="#e9ddff">RecIF-Bench</text>
+        <text x="26" y="92" font-size="11" class="muted">8 任务 · 4 层能力金字塔</text>
+        <text x="26" y="116" font-size="11" class="muted">L0 语义对齐</text>
+        <text x="26" y="132" font-size="11" class="muted">L1 基础预测</text>
+        <text x="26" y="148" font-size="11" class="muted">L2 指令遵循</text>
+        <text x="26" y="164" font-size="11" class="muted">L3 推理（解释）</text>
+        <text x="26" y="184" font-size="11" class="mono" fill="#d6bbff">R@32 · AUC · LLM Score</text>
+      </g>
+      <g data-id="node-amazon">
+        <rect x="14" y="234" width="186" height="90" rx="8" fill="#241a38" stroke="#6a54a8"/>
+        <text x="26" y="254" font-size="12.5" font-weight="700" fill="#e9ddff">Amazon 跨域迁移</text>
+        <text x="26" y="270" font-size="11" class="muted">10 数据集 zero/few-shot</text>
+        <text x="26" y="286" font-size="11" class="mono" fill="#d6bbff">平均 +26.8% Recall@10</text>
+        <text x="26" y="300" font-size="11" class="muted">Text-Augmented Itemic</text>
+      </g>
+    </g>
+
+    <text x="24" y="478" font-size="12" class="dim">注：Standard / Pro 共享同一套后训练策略与数据；区别仅在预训练语料规模（32B vs 130B token）。</text>
+  </svg>
+  </div>
+
+  <div class="hint">💡 图例：主脉络以 <span class="tag">①→②→③→④→⑤</span> 串联；每个虚线深色子块 = 可点击节点。</div>
+</section>
+
+<!-- ============================ 1 数据词表 ============================ -->
+<section id="a1">
+  <div class="sec-head"><span class="sec-num">02</span><h2>数据管道 &amp; Itemic 词表（Item as Tokens）</h2></div>
+  <p class="sec-desc">
+    核心思想：把「物品」当成一种独立模态，压缩成 3 个层级码，用与文本统一的 token 空间表达——这是整条流水线的地基。
+  </p>
+
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 470" role="img" aria-label="data pipeline and tokenizer">
+    <defs>
+      <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+    </defs>
+    <text x="24" y="34" font-size="20" font-weight="700" fill="#fff">从原始元数据到 Itemic Tokens</text>
+
+    <!-- domain sources -->
+    <g data-id="node-domain">
+      <rect x="24" y="56" width="300" height="118" rx="12" fill="#153133" stroke="#39c5cf"/>
+      <text x="40" y="80" font-size="14" font-weight="700" fill="#7fe0e6">三域原始元数据</text>
+      <text x="40" y="100" font-size="11.5" class="muted">Kuaishou 匿名用户日志（user-based split）</text>
+      <rect x="36" y="110" width="88" height="28" rx="6" fill="#1d4346"/>
+      <text x="48" y="128" font-size="11.5" fill="#d9f6f7">短视频 Content</text>
+      <rect x="130" y="110" width="82" height="28" rx="6" fill="#1d4346"/>
+      <text x="142" y="128" font-size="11.5" fill="#d9f6f7">广告 Ads</text>
+      <rect x="218" y="110" width="92" height="28" rx="6" fill="#1d4346"/>
+      <text x="230" y="128" font-size="11.5" fill="#d9f6f7">商品 Product</text>
+      <text x="40" y="160" font-size="11" class="dim">user/item/interaction 侧元数据 · 13M captions</text>
+    </g>
+    <path class="flow thick" d="M324,115 L352,115" marker-end="url(#arr2)"/>
+
+    <!-- embedding -->
+    <g data-id="node-embed2">
+      <rect x="360" y="56" width="250" height="118" rx="12" fill="#153133" stroke="#39c5cf"/>
+      <text x="376" y="80" font-size="14" font-weight="700" fill="#7fe0e6">语义嵌入提取</text>
+      <text x="376" y="100" font-size="11.5" class="muted">视频文本描述</text>
+      <rect x="372" y="110" width="226" height="26" rx="6" fill="#1d4346"/>
+      <text x="382" y="127" font-size="11.5" class="mono" fill="#7fe0e6">Qwen3-8B-Embedding</text>
+      <text x="376" y="160" font-size="11" class="muted">4096 维（另提供多模态嵌入：5 帧 ×1152）</text>
+    </g>
+    <path class="flow thick" d="M610,115 L638,115" marker-end="url(#arr2)"/>
+
+    <!-- RQ-kmeans -->
+    <g data-id="node-rq2">
+      <rect x="646" y="56" width="300" height="118" rx="12" fill="#153133" stroke="#39c5cf"/>
+      <text x="662" y="80" font-size="14" font-weight="700" fill="#7fe0e6">RQ-Kmeans 残差量化</text>
+      <text x="662" y="98" font-size="11" class="muted">分层聚类：逐层拟合残差</text>
+      <text x="662" y="120" font-size="11.5" class="mono" fill="#7fe0e6">Layer a: 8192 码本 → c₁</text>
+      <text x="662" y="138" font-size="11.5" class="mono" fill="#7fe0e6">Layer b: 8192 码本 → c₂</text>
+      <text x="662" y="156" font-size="11.5" class="mono" fill="#7fe0e6">Layer c: 8192 码本 → c₃</text>
+    </g>
+    <path class="flow thick" d="M946,115 L974,115" marker-end="url(#arr2)"/>
+
+    <!-- SID -->
+    <g data-id="node-sid">
+      <rect x="982" y="56" width="316" height="118" rx="12" fill="#123036" stroke="#7fe0e6" stroke-width="1.5"/>
+      <text x="998" y="80" font-size="14" font-weight="700" fill="#d9fbff">Itemic Token 序列</text>
+      <rect x="994" y="92" width="292" height="30" rx="6" fill="#0c252b"/>
+      <text x="1004" y="111" font-size="11" class="mono" fill="#7fe0e6">&lt;|sid_begin|&gt;&lt;s_a_5028&gt;&lt;s_b_6733&gt;&lt;s_c_2559&gt;&lt;|sid_end|&gt;</text>
+      <text x="998" y="142" font-size="11" class="muted">语义相似 → 共享前缀（层级语义）</text>
+      <text x="998" y="158" font-size="11" class="muted">短、定长 → 支撑长上下文</text>
+    </g>
+
+    <!-- quantization detail -->
+    <g data-id="node-residual" transform="translate(24,196)">
+      <rect x="0" y="0" width="620" height="252" rx="12" fill="#161b22" stroke="#2d333b"/>
+      <text x="18" y="26" font-size="13.5" font-weight="700" fill="#9ad8dc">残差 K-Means（ResKmeans 实现）</text>
+      <g data-id="node-enc">
+        <rect x="18" y="42" width="180" height="150" rx="8" fill="#16333a" stroke="#2e5a60"/>
+        <text x="30" y="62" font-size="12" font-weight="700" fill="#c9f4f5">encode(x)</text>
+        <text x="30" y="82" font-size="11" class="muted">x ← x − centroid[l][code]</text>
+        <text x="30" y="100" font-size="11" class="muted">每层取最近质心 argmin</text>
+        <text x="30" y="122" font-size="11" class="mono" fill="#7fe0e6">dist = ||x||² + ||c||²</text>
+        <text x="30" y="136" font-size="11" class="mono" fill="#7fe0e6">       −2·xᵀc</text>
+        <text x="30" y="160" font-size="11" class="muted">输出 [c₁,c₂,c₃]</text>
+      </g>
+      <g data-id="node-dec">
+        <rect x="216" y="42" width="180" height="150" rx="8" fill="#16333a" stroke="#2e5a60"/>
+        <text x="228" y="62" font-size="12" font-weight="700" fill="#c9f4f5">decode(code)</text>
+        <text x="228" y="82" font-size="11" class="muted">out += centroids[l][code_l]</text>
+        <text x="228" y="100" font-size="11" class="muted">逐层累加质心向量</text>
+        <text x="228" y="122" font-size="11" class="muted">重建嵌入（有损）</text>
+        <text x="228" y="150" font-size="11" class="mono" fill="#7fe0e6">loss = MSE + rel</text>
+      </g>
+      <g data-id="node-codebook">
+        <rect x="414" y="42" width="188" height="150" rx="8" fill="#16333a" stroke="#2e5a60"/>
+        <text x="426" y="62" font-size="12" font-weight="700" fill="#c9f4f5">码本</text>
+        <text x="426" y="84" font-size="11" class="mono" fill="#7fe0e6">n_layers = 3</text>
+        <text x="426" y="100" font-size="11" class="mono" fill="#7fe0e6">codebook_size = 8192</text>
+        <text x="426" y="116" font-size="11" class="mono" fill="#7fe0e6">dim = 4096</text>
+        <text x="426" y="138" font-size="11" class="muted">faiss.Kmeans</text>
+        <text x="426" y="154" font-size="11" class="muted">spherical=False</text>
+      </g>
+      <text x="18" y="226" font-size="11" class="dim">权重公开：OpenOneRec/OneRec-tokenizer · 新数据集必须用 Qwen3-8B-Embedding</text>
+    </g>
+
+    <g data-id="node-corpora2" transform="translate(660,196)">
+      <rect x="0" y="0" width="638" height="252" rx="12" fill="#161b22" stroke="#2d333b"/>
+      <text x="18" y="26" font-size="13.5" font-weight="700" fill="#9ad8dc">三类推荐语料（用 itemic 组织）</text>
+      <g data-id="node-dc">
+        <rect x="18" y="42" width="186" height="132" rx="8" fill="#16333a" stroke="#2e5a60"/>
+        <text x="30" y="62" font-size="12" font-weight="700" fill="#c9f4f5">Itemic Dense Caption</text>
+        <text x="30" y="82" font-size="11" class="muted">itemic → 自然语言描述</text>
+        <text x="30" y="100" font-size="11" class="muted">建立「词-文本」初始感知</text>
+        <text x="30" y="118" font-size="11" class="muted">语义桥 / 对齐</text>
+      </g>
+      <g data-id="node-seq">
+        <rect x="218" y="42" width="186" height="132" rx="8" fill="#16333a" stroke="#2e5a60"/>
+        <text x="230" y="62" font-size="12" font-weight="700" fill="#c9f4f5">Sequential User Behavior</text>
+        <text x="230" y="82" font-size="11" class="muted">时序交互（view/like/share）</text>
+        <text x="230" y="100" font-size="11" class="muted">next-item 预测</text>
+        <text x="230" y="118" font-size="11" class="muted">协同过滤 + 时序信号</text>
+      </g>
+      <g data-id="node-persona">
+        <rect x="418" y="42" width="200" height="132" rx="8" fill="#16333a" stroke="#2e5a60"/>
+        <text x="430" y="62" font-size="12" font-weight="700" fill="#c9f4f5">Interleaved Persona</text>
+        <text x="430" y="82" font-size="11" class="muted">画像叙事：离散 item ↔ 元数据</text>
+        <text x="430" y="100" font-size="11" class="muted">静态属性 + 搜索 + 兴趣</text>
+        <text x="430" y="118" font-size="11" class="muted">量化空间语义接地</text>
+      </g>
+      <g data-id="node-parquet">
+        <rect x="18" y="190" width="600" height="46" rx="8" fill="#123036" stroke="#7fe0e6"/>
+        <text x="32" y="210" font-size="12" font-weight="700" fill="#d9fbff">统一 Parquet 格式</text>
+        <text x="32" y="226" font-size="11" class="muted">messages（chat）/ segments（文本）· 每文件 1000 样本 · metadata JSON</text>
+      </g>
+    </g>
+  </svg>
+  </div>
+</section>
+
+<!-- ============================ 2 预训练 ============================ -->
+<section id="a2">
+  <div class="sec-head"><span class="sec-num">03</span><h2>预训练 · 两阶段 + 缩放律</h2></div>
+  <p class="sec-desc">
+    先「词-文本对齐」再「全参数共预训练」；推荐语料与通用语料混合以抵抗灾难性遗忘，并遵循可预测的缩放律。
+  </p>
+
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 470" role="img" aria-label="pretraining two stages">
+    <defs>
+      <marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+    </defs>
+    <text x="24" y="34" font-size="20" font-weight="700" fill="#fff">预训练两阶段：对齐 → 共预训练</text>
+
+    <!-- vocab expansion -->
+    <g data-id="node-vocab2" transform="translate(24,56)">
+      <rect x="0" y="0" width="300" height="150" rx="12" fill="#15283f" stroke="#58a6ff"/>
+      <text x="18" y="26" font-size="13.5" font-weight="700" fill="#cfe4ff">0 · 词表扩展（前置）</text>
+      <text x="18" y="48" font-size="11.5" class="muted">向 Qwen3 tokenizer 追加 itemic 特殊 token</text>
+      <text x="18" y="70" font-size="11.5" class="mono" fill="#9cc9ff">3 × 8192 + &lt;|sid_begin|&gt;&lt;|sid_end|&gt;</text>
+      <text x="18" y="92" font-size="11.5" class="muted">vocab 对齐到 256 倍数</text>
+      <text x="18" y="114" font-size="11.5" class="muted">新词 embedding 随机初始化</text>
+      <text x="18" y="134" font-size="11.5" class="mono" fill="#9cc9ff">itemic_id_range [151669, 176246]</text>
+    </g>
+    <path class="flow thick" d="M324,131 L352,131" marker-end="url(#arr3)"/>
+
+    <!-- stage 1 -->
+    <g data-id="node-stg1b">
+      <rect x="360" y="56" width="330" height="150" rx="12" fill="#15283f" stroke="#58a6ff"/>
+      <text x="378" y="80" font-size="13.5" font-weight="700" fill="#9cc9ff">Stage 1 · Itemic-Text Alignment</text>
+      <text x="378" y="102" font-size="11.5" class="muted">只让 itemic embedding（及大模型输出投影）可训练</text>
+      <text x="378" y="122" font-size="11.5" class="muted">其余全部冻结 → 让 itemic 融入文本语义空间</text>
+      <g transform="translate(378,134)">
+        <rect x="0" y="0" width="150" height="22" rx="5" fill="#0f2033"/>
+        <text x="8" y="15" font-size="11" class="mono" fill="#9cc9ff">高斯 N(μ_exist, Σ_exist)</text>
+        <rect x="158" y="0" width="90" height="22" rx="5" fill="#0f2033"/>
+        <text x="166" y="15" font-size="11" class="mono" fill="#9cc9ff">lr = 1e-3</text>
+      </g>
+      <text x="378" y="188" font-size="11" class="dim">tied embeddings（0.6/1.7/4B）→ 输出投影同训</text>
+    </g>
+    <path class="flow thick" d="M690,131 L718,131" marker-end="url(#arr3)"/>
+
+    <!-- stage 2 -->
+    <g data-id="node-stg2b">
+      <rect x="726" y="56" width="330" height="150" rx="12" fill="#15283f" stroke="#58a6ff"/>
+      <text x="744" y="80" font-size="13.5" font-weight="700" fill="#9cc9ff">Stage 2 · Full-Parameter Co-Pretrain</text>
+      <text x="744" y="102" font-size="11.5" class="muted">解冻所有参数，注入推荐知识</text>
+      <text x="744" y="122" font-size="11.5" class="muted">混入大量通用语料 → 防灾难性遗忘</text>
+      <g transform="translate(744,134)">
+        <rect x="0" y="0" width="120" height="22" rx="5" fill="#0f2033"/>
+        <text x="8" y="15" font-size="11" class="mono" fill="#9cc9ff">ctx = 32K</text>
+        <rect x="128" y="0" width="100" height="22" rx="5" fill="#0f2033"/>
+        <text x="136" y="15" font-size="11" class="mono" fill="#9cc9ff">lr = 1e-4</text>
+      </g>
+      <text x="744" y="188" font-size="11" class="dim">AdamW(β=.9,.95,wdecay=.1) · cosine · 10% warmup</text>
+    </g>
+
+    <!-- data mixing -->
+    <g data-id="node-mix" transform="translate(24,240)">
+      <rect x="0" y="0" width="620" height="180" rx="12" fill="#161b22" stroke="#2d333b"/>
+      <text x="18" y="26" font-size="13.5" font-weight="700" fill="#9cc9ff">数据混合 · 防遗忘</text>
+      <g data-id="node-mixrec">
+        <rect x="18" y="44" width="280" height="116" rx="8" fill="#15283f" stroke="#3d6a9c"/>
+        <text x="32" y="66" font-size="12.5" font-weight="700" fill="#cfe4ff">推荐域语料</text>
+        <text x="32" y="86" font-size="11" class="muted">160k 用户 · 13M captions</text>
+        <text x="32" y="102" font-size="11" class="muted">Standard 32B token / 41.3M 样本</text>
+        <text x="32" y="122" font-size="11" class="muted">Pro 130B / 179.1M（~20M 用户）</text>
+      </g>
+      <g data-id="node-mixgen">
+        <rect x="322" y="44" width="280" height="116" rx="8" fill="#15283f" stroke="#3d6a9c"/>
+        <text x="338" y="66" font-size="12.5" font-weight="700" fill="#cfe4ff">通用域语料</text>
+        <text x="338" y="86" font-size="11" class="muted">代码 / STEM / 医学</text>
+        <text x="338" y="102" font-size="11" class="muted">推理密集优先，多语言</text>
+        <text x="338" y="122" font-size="11" class="muted">MinHash 去重隔离评测集</text>
+      </g>
+    </g>
+
+    <!-- scaling -->
+    <g data-id="node-scaling" transform="translate(660,240)">
+      <rect x="0" y="0" width="638" height="180" rx="12" fill="#161b22" stroke="#2d333b"/>
+      <text x="18" y="26" font-size="13.5" font-weight="700" fill="#9cc9ff">缩放律（Hoffmann 框架）</text>
+      <text x="18" y="48" font-size="11.5" class="muted">N ∈ {0.6,1.7,4,8,14}B · C ≈ 6ND · 凸包前沿</text>
+      <g data-id="node-slaw1">
+        <rect x="18" y="62" width="290" height="40" rx="8" fill="#15283f" stroke="#3d6a9c"/>
+        <text x="32" y="80" font-size="12.5" class="mono" fill="#cfe4ff">N_opt ∝ C⁰·⁴⁴</text>
+        <text x="32" y="95" font-size="11" class="muted">最优模型规模随算力增长</text>
+      </g>
+      <g data-id="node-slaw2">
+        <rect x="320" y="62" width="300" height="40" rx="8" fill="#15283f" stroke="#3d6a9c"/>
+        <text x="334" y="80" font-size="12.5" class="mono" fill="#cfe4ff">D_opt ∝ C⁰·⁵⁶</text>
+        <text x="334" y="95" font-size="11" class="muted">最优 token 分配</text>
+      </g>
+      <g data-id="node-entropy">
+        <rect x="18" y="112" width="602" height="52" rx="8" fill="#15283f" stroke="#3d6a9c"/>
+        <text x="32" y="132" font-size="12" font-weight="700" fill="#cfe4ff">推荐域不可约损失 E ≈ 0.42 ≪ 文本 E ≈ 1.69</text>
+        <text x="32" y="150" font-size="11" class="muted">推荐任务熵更低 → 需更高质量/多样的语料避免饱和</text>
+      </g>
+    </g>
+  </svg>
+  </div>
+</section>
+
+<!-- ============================ 3 后训练 ============================ -->
+<section id="a3">
+  <div class="sec-head"><span class="sec-num">04</span><h2>后训练 · SFT → On-Policy 蒸馏 → Rec-RL</h2></div>
+  <p class="sec-desc">
+    三步走：SFT 恢复指令遵循 → On-Policy 蒸馏恢复通用推理 → GRPO 强化学习直接优化推荐命中。抽象参数（arc 参数化）也在 RL 阶段统一实现。
+  </p>
+
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 540" role="img" aria-label="post-training three stages">
+    <defs>
+      <marker id="arr4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+    </defs>
+    <text x="24" y="34" font-size="20" font-weight="700" fill="#fff">后训练三阶段</text>
+    <text x="600" y="34" font-size="12" class="muted">图 6 · Post-training pipeline（重绘）</text>
+
+    <!-- SFT -->
+    <g data-id="node-sftb" transform="translate(24,56)">
+      <rect x="0" y="0" width="300" height="200" rx="12" fill="#1c2b22" stroke="#3fb950"/>
+      <text x="18" y="28" font-size="14" font-weight="700" fill="#a6f3b6">Stage 1 · Multi-Task SFT</text>
+      <text x="18" y="50" font-size="11.5" class="muted">恢复指令遵循 + 推理能力</text>
+      <text x="18" y="72" font-size="11.5" class="muted">• 8 个推荐任务指令对</text>
+      <text x="18" y="90" font-size="11.5" class="muted">• 通用指令 / 复杂推理数据</text>
+      <text x="18" y="108" font-size="11.5" class="muted">• Qwen3 chat template 序列化</text>
+      <text x="18" y="130" font-size="11.5" class="mono" fill="#7ee787">lr: 2e-5 → 5e-6</text>
+      <rect x="18" y="144" width="264" height="36" rx="7" fill="#16261b"/>
+      <text x="30" y="160" font-size="11" class="muted">思维控制：随机附加</text>
+      <text x="30" y="174" font-size="11" class="mono" fill="#7ee787">/think · /no_think</text>
+    </g>
+    <path class="flow thick" d="M324,156 L352,156" marker-end="url(#arr4)"/>
+
+    <!-- distill -->
+    <g data-id="node-distillb" transform="translate(360,56)">
+      <rect x="0" y="0" width="430" height="200" rx="12" fill="#2e2616" stroke="#d29922"/>
+      <text x="18" y="28" font-size="14" font-weight="700" fill="#f4dd9a">Stage 2 · On-Policy Distillation</text>
+      <text x="18" y="48" font-size="11.5" class="muted">学生自采样轨迹，教师打分 → 策略梯度</text>
+      <g data-id="node-distrloop">
+        <rect x="18" y="62" width="190" height="120" rx="8" fill="#241c0e" stroke="#6b551c"/>
+        <text x="30" y="82" font-size="12" font-weight="700" fill="#f4dd9a">学生 Policy π_θ</text>
+        <text x="30" y="100" font-size="11" class="muted">采样轨迹 o（高温探索）</text>
+        <text x="30" y="118" font-size="11" class="muted">prompt 只取自通用域</text>
+        <text x="30" y="140" font-size="11" class="muted">200K 通用问题</text>
+        <text x="30" y="156" font-size="11" class="muted">附录 /think /no_think</text>
+      </g>
+      <g data-id="node-distrteacher">
+        <rect x="222" y="62" width="190" height="120" rx="8" fill="#33280f" stroke="#d29922"/>
+        <text x="234" y="82" font-size="12" font-weight="700" fill="#f4dd9a">教师 π_teacher</text>
+        <text x="234" y="100" font-size="11" class="muted">= 同尺度 Qwen3</text>
+        <text x="234" y="118" font-size="11" class="muted">不认识 itemic（词表差异）</text>
+        <text x="234" y="146" font-size="11" class="mono" fill="#f0c674">R = clip(−D_KL, α, β)</text>
+      </g>
+      <text x="18" y="176" font-size="11" class="dim">itemic 惩罚 log π_teacher = −1e9 → 截断该轨迹</text>
+    </g>
+
+    <!-- RL -->
+    <g data-id="node-rlb" transform="translate(810,56)">
+      <rect x="0" y="0" width="486" height="460" rx="12" fill="#331f15" stroke="#f0883e"/>
+      <text x="18" y="28" font-size="14" font-weight="700" fill="#ffcfa8">Stage 3 · Rec-RL (GRPO)</text>
+      <text x="18" y="48" font-size="11.5" class="muted">直接优化命中（Recall），组相对优势</text>
+
+      <g data-id="node-grpo">
+        <rect x="18" y="62" width="450" height="96" rx="8" fill="#24140c" stroke="#7a3d16"/>
+        <text x="30" y="82" font-size="12.5" font-weight="700" fill="#ffcfa8">GRPO · Group Relative Policy Optimization</text>
+        <text x="30" y="100" font-size="11" class="muted">每 prompt 采样 G 条 {R₁..R_G}，组内归一化优势</text>
+        <text x="30" y="118" font-size="11" class="mono" fill="#ffb387">L = (1/G)Σ Advᵢ·log π_θ(Rᵢ) − β·KL(π_θ ‖ π_ref)</text>
+        <text x="30" y="136" font-size="11" class="muted">无需 critic；π_ref = 蒸馏后模型</text>
+      </g>
+
+      <g data-id="node-reward">
+        <rect x="18" y="168" width="450" height="72" rx="8" fill="#24140c" stroke="#7a3d16"/>
+        <text x="30" y="188" font-size="12.5" font-weight="700" fill="#ffcfa8">规则奖励（稀疏 Hit）</text>
+        <text x="30" y="206" font-size="11" class="mono" fill="#ffb387">r(Rᵢ) = 1 若目标 itemic ∈ Rᵢ，否则 0</text>
+        <text x="30" y="224" font-size="11" class="muted">5 任务：短视频 / 广告 / 商品 / 交互 / 标签条件</text>
+      </g>
+
+      <g data-id="node-twostage">
+        <rect x="18" y="250" width="450" height="130" rx="8" fill="#24140c" stroke="#f0883e"/>
+        <text x="30" y="270" font-size="12.5" font-weight="700" fill="#ffcfa8">Two-Stage Rollout（生成）</text>
+        <rect x="30" y="282" width="200" height="34" rx="6" fill="#3a2112"/>
+        <text x="40" y="296" font-size="11" class="muted">Stage1 采样 CoT</text>
+        <text x="40" y="310" font-size="11" class="mono" fill="#ffb387">直到「 response」· ≤1024</text>
+        <rect x="246" y="282" width="206" height="34" rx="6" fill="#3a2112"/>
+        <text x="256" y="296" font-size="11" class="muted">Stage2 插入前缀</text>
+        <text x="256" y="310" font-size="11" class="mono" fill="#ffb387">&lt;sid_begin&gt; → beam=32</text>
+      </g>
+
+      <g data-id="node-finetune">
+        <rect x="18" y="390" width="450" height="52" rx="8" fill="#24140c" stroke="#7a3d16"/>
+        <text x="30" y="410" font-size="12" font-weight="700" fill="#ffcfa8">SFT+GRPO 统一实现</text>
+        <text x="30" y="428" font-size="11" class="muted">前缀约束 / od_model / 束搜索 + 蒸馏共用 arc 框架</text>
+      </g>
+    </g>
+  </svg>
+  </div>
+
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 330" role="img" aria-label="on-policy distillation loop">
+    <defs>
+      <marker id="arr5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+    </defs>
+    <text x="24" y="34" font-size="20" font-weight="700" fill="#fff">On-Policy Distillation via Policy Gradient（图 7）</text>
+    <text x="600" y="34" font-size="12" class="muted">reward = clip(−D_KL(π_θ ‖ π_teacher))，逐 token</text>
+
+    <g data-id="node-odpolicy" transform="translate(60,90)">
+      <rect x="0" y="0" width="240" height="120" rx="12" fill="#2e2616" stroke="#d29922"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#f4dd9a">Policy Model π_θ</text>
+      <text x="18" y="52" font-size="11" class="muted">SFT 后的学生</text>
+      <text x="18" y="72" font-size="11" class="muted">采样轨迹 o（高温）</text>
+      <text x="18" y="90" font-size="11" class="mono" fill="#f0c674">∇θ J = E[Σ ∇θ logπ · R_KL]</text>
+    </g>
+    <path class="flow thick" d="M300,150 L360,150" marker-end="url(#arr5)"/>
+
+    <g data-id="node-odteacher" transform="translate(370,90)">
+      <rect x="0" y="0" width="240" height="120" rx="12" fill="#33280f" stroke="#d29922"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#f4dd9a">Teacher π_teacher</text>
+      <text x="18" y="52" font-size="11" class="muted">同尺度 Qwen3</text>
+      <text x="18" y="72" font-size="11" class="muted">逐 token reverse-KL 打分</text>
+      <text x="18" y="90" font-size="11" class="mono" fill="#f0c674">clip(·, α, β)</text>
+    </g>
+    <path class="flow thick" d="M490,210 L490,270 L300,270 L300,210" marker-end="url(#arr5)" fill="none"/>
+    <text x="395" y="288" font-size="11" class="dim" text-anchor="middle">策略梯度回传（奖励 R_KL）</text>
+
+    <g data-id="node-odpenalty" transform="translate(700,90)">
+      <rect x="0" y="0" width="560" height="120" rx="12" fill="#161b22" stroke="#2d333b"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#f4dd9a">词表差异的稳健处理</text>
+      <text x="18" y="54" font-size="11.5" class="muted">① Prompt 只取通用域 → 期望纯文本输出</text>
+      <text x="18" y="76" font-size="11.5" class="muted">② 出现 itemic：log π_teacher := −1e9 并截断（防 training collapse）</text>
+      <text x="18" y="98" font-size="11.5" class="muted">③ 高温采样 → 主动暴露并纠正 itemic 误激活</text>
+    </g>
+  </svg>
+  </div>
+</section>
+
+<!-- ============================ 4 评测 ============================ -->
+<section id="a4">
+  <div class="sec-head"><span class="sec-num">05</span><h2>评测 · RecIF-Bench 能力金字塔 &amp; 迁移</h2></div>
+  <p class="sec-desc">
+    RecIF-Bench 用「4 层能力金字塔 × 8 任务 × 3 域」系统评估指令遵循与推荐能力的协同；用 Amazon 10 数据集验证跨域迁移。
+  </p>
+
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 520" role="img" aria-label="RecIF-Bench capability pyramid">
+    <defs>
+      <linearGradient id="g-l0" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d2c5e"/><stop offset="1" stop-color="#201533"/></linearGradient>
+      <linearGradient id="g-l1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a4a33"/><stop offset="1" stop-color="#14251a"/></linearGradient>
+      <linearGradient id="g-l2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2e2616"/><stop offset="1" stop-color="#19140c"/></linearGradient>
+      <linearGradient id="g-l3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a2030"/><stop offset="1" stop-color="#24101a"/></linearGradient>
+    </defs>
+    <text x="24" y="34" font-size="20" font-weight="700" fill="#fff">RecIF-Bench · 能力层级</text>
+
+    <!-- pyramid -->
+    <g data-id="node-l3">
+      <polygon points="660,72 838,158 482,158" fill="url(#g-l3)" stroke="#f85149" stroke-width="1.4"/>
+      <text x="660" y="112" text-anchor="middle" font-size="14" font-weight="700" fill="#ffb3a8">L3 · 推理</text>
+      <text x="660" y="130" text-anchor="middle" font-size="11.5" fill="#f6d8d4">推荐解释 Recommendation Explanation</text>
+      <text x="660" y="146" text-anchor="middle" font-size="10.5" class="mono" fill="#ffb3a8">LLM Score</text>
+    </g>
+    <g data-id="node-l2">
+      <polygon points="660,164 902,282 418,282" fill="url(#g-l2)" stroke="#d29922" stroke-width="1.4"/>
+      <text x="660" y="212" text-anchor="middle" font-size="14" font-weight="700" fill="#f4dd9a">L2 · 指令遵循</text>
+      <text x="660" y="232" text-anchor="middle" font-size="11.5" fill="#f0ead6">交互推荐 Interactive Rec</text>
+      <text x="660" y="250" text-anchor="middle" font-size="11.5" fill="#f0ead6">标签条件推荐 Label-Conditional Rec</text>
+      <text x="660" y="268" text-anchor="middle" font-size="10.5" class="mono" fill="#f4dd9a">Recall@32</text>
+    </g>
+    <g data-id="node-l1">
+      <polygon points="660,288 966,438 354,438" fill="url(#g-l1)" stroke="#3fb950" stroke-width="1.4"/>
+      <text x="660" y="340" text-anchor="middle" font-size="14" font-weight="700" fill="#a6f3b6">L1 · 基础预测</text>
+      <text x="660" y="362" text-anchor="middle" font-size="11.5" fill="#d9f4dd">短视频 Rec · 广告 Rec · 商品 Rec</text>
+      <text x="660" y="380" text-anchor="middle" font-size="11.5" fill="#d9f4dd">标签预测 Label Prediction</text>
+      <text x="660" y="398" text-anchor="middle" font-size="10.5" class="mono" fill="#a6f3b6">Recall@32 · AUC</text>
+    </g>
+    <g data-id="node-l0">
+      <rect x="384" y="438" width="552" height="58" rx="10" fill="url(#g-l0)" stroke="#bc8cff" stroke-width="1.4"/>
+      <text x="660" y="462" text-anchor="middle" font-size="14" font-weight="700" fill="#d6bbff">L0 · 语义对齐（Item Understanding）</text>
+      <text x="660" y="482" text-anchor="middle" font-size="11" fill="#e4d5f7">SID → Caption 逆映射，验证 itemic 与语言对齐</text>
+    </g>
+
+    <!-- side note -->
+    <g data-id="node-layers">
+      <rect x="30" y="72" width="310" height="424" rx="12" fill="#161b22" stroke="#2d333b"/>
+      <text x="46" y="98" font-size="13" font-weight="700" fill="#d6bbff">层级语义</text>
+      <text x="46" y="122" font-size="11.5" class="muted">自底向上：</text>
+      <text x="46" y="146" font-size="11.5" fill="#e4d5f7">L0 对齐 → 一切下游任务前提</text>
+      <text x="46" y="172" font-size="11.5" fill="#a6f3b6">L1 预测 → 冷门检索/分类</text>
+      <text x="46" y="198" font-size="11.5" fill="#f4dd9a">L2 遵循 → 指令引导生成</text>
+      <text x="46" y="224" font-size="11.5" fill="#ffb3a8">L3 推理 → 综合+表达</text>
+      <line x1="46" y1="242" x2="324" y2="242" stroke="#2d333b"/>
+      <text x="46" y="266" font-size="11.5" class="muted">三域异构：</text>
+      <text x="46" y="286" font-size="11.5" fill="#c9d1d9">短视频（内容）195k 用户</text>
+      <text x="46" y="306" font-size="11.5" fill="#c9d1d9">广告（商业）151k 用户</text>
+      <text x="46" y="326" font-size="11.5" fill="#c9d1d9">商品（电商）144k 用户</text>
+      <line x1="46" y1="344" x2="324" y2="344" stroke="#2d333b"/>
+      <text x="46" y="368" font-size="11.5" class="muted">评测：vLLM + 规则/LLM 评分</text>
+      <text x="46" y="392" font-size="11.5" class="muted">beam search (best_of) 生成</text>
+    </g>
+
+    <g data-id="node-amazon2">
+      <rect x="1006" y="72" width="290" height="424" rx="12" fill="#1d1730" stroke="#bc8cff"/>
+      <text x="1022" y="98" font-size="13" font-weight="700" fill="#d6bbff">跨域迁移 · Amazon</text>
+      <text x="1022" y="122" font-size="11.5" class="muted">10 数据集 zero/few-shot</text>
+      <text x="1022" y="144" font-size="11.5" class="muted">Baby · Beauty · Phones ·</text>
+      <text x="1022" y="162" font-size="11.5" class="muted">Grocery · Health · Home ·</text>
+      <text x="1022" y="180" font-size="11.5" class="muted">Pet · Sports · Tools · Toys</text>
+      <rect x="1016" y="196" width="270" height="60" rx="8" fill="#241a38" stroke="#6a54a8"/>
+      <text x="1030" y="220" font-size="17" font-weight="700" fill="#e9ddff">+26.8%</text>
+      <text x="1030" y="240" font-size="11" class="muted">平均 Recall@10 提升（vs 次优）</text>
+      <text x="1022" y="280" font-size="11.5" class="muted">迁移用 Text-Augmented Itemic：</text>
+      <text x="1022" y="300" font-size="11.5" class="muted">[itemic_tokens] + [keywords]</text>
+      <text x="1022" y="322" font-size="11.5" class="muted">不破坏层级语义，碰撞率最低</text>
+      <text x="1022" y="344" font-size="11.5" class="mono" fill="#d6bbff">collision 0.47%</text>
+    </g>
+  </svg>
+  </div>
+</section>
+
+<!-- ============================ 5 模型 ============================ -->
+<section id="a5">
+  <div class="sec-head"><span class="sec-num">06</span><h2>模型家族 &amp; 关键设计点</h2></div>
+  <p class="sec-desc">基于 Qwen3 骨干、结构严格不变，只扩展词表；Standard 与 Pro 的区别仅在预训练语料规模。</p>
+
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 430" role="img" aria-label="OneRec model family">
+    <defs>
+      <linearGradient id="g-card" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#241b34"/><stop offset="1" stop-color="#161129"/></linearGradient>
+    </defs>
+    <text x="24" y="34" font-size="20" font-weight="700" fill="#fff">OneRec-Foundation 模型家族</text>
+
+    <!-- 4 cards -->
+    <g data-id="node-m1">
+      <rect x="24" y="56" width="300" height="150" rx="12" fill="url(#g-card)" stroke="#6a54a8"/>
+      <text x="40" y="84" font-size="16" font-weight="700" fill="#e9ddff">OneRec-1.7B</text>
+      <text x="40" y="106" font-size="11.5" class="muted">Qwen3-1.7B · tied embeddings</text>
+      <text x="40" y="126" font-size="11.5" class="muted">Standard · 开源数据 ~33B token</text>
+      <text x="40" y="146" font-size="11.5" class="mono" fill="#d6bbff">示例 R@32 (短视频) 0.0272</text>
+    </g>
+    <g data-id="node-m2">
+      <rect x="340" y="56" width="300" height="150" rx="12" fill="url(#g-card)" stroke="#6a54a8"/>
+      <text x="356" y="84" font-size="16" font-weight="700" fill="#e9ddff">OneRec-8B</text>
+      <text x="356" y="106" font-size="11.5" class="muted">Qwen3-8B · 独立输出投影</text>
+      <text x="356" y="126" font-size="11.5" class="muted">Standard · ~33B token</text>
+      <text x="356" y="146" font-size="11.5" class="mono" fill="#d6bbff">示例 R@32 (短视频) 0.0355</text>
+    </g>
+    <g data-id="node-m3">
+      <rect x="656" y="56" width="300" height="150" rx="12" fill="url(#g-card)" stroke="#bc8cff" stroke-width="1.4"/>
+      <text x="672" y="84" font-size="16" font-weight="700" fill="#e9ddff">OneRec-1.7B-Pro</text>
+      <text x="672" y="106" font-size="11.5" class="muted">Qwen3-1.7B · 快手工业语料</text>
+      <text x="672" y="126" font-size="11.5" class="muted">Pro · ~130B token</text>
+      <text x="672" y="146" font-size="11.5" class="mono" fill="#d6bbff">示例 R@32 (短视频) 0.0274</text>
+    </g>
+    <g data-id="node-m4">
+      <rect x="972" y="56" width="324" height="150" rx="12" fill="url(#g-card)" stroke="#bc8cff" stroke-width="1.4"/>
+      <text x="988" y="84" font-size="16" font-weight="700" fill="#e9ddff">OneRec-8B-Pro ⭐</text>
+      <text x="988" y="106" font-size="11.5" class="muted">Qwen3-8B · 全面 SOTA</text>
+      <text x="988" y="126" font-size="11.5" class="muted">Pro · ~130B token</text>
+      <text x="988" y="146" font-size="11.5" class="mono" fill="#d6bbff">短视频 R@32 0.0369 · 解释 4.04</text>
+    </g>
+
+    <!-- key design -->
+    <g data-id="node-keybuilt">
+      <rect x="24" y="232" width="620" height="176" rx="12" fill="#161b22" stroke="#2d333b"/>
+      <text x="40" y="260" font-size="13.5" font-weight="700" fill="#d6bbff">关键架构决策</text>
+      <text x="40" y="284" font-size="11.5" class="muted">• 架构严格与 Qwen3 一致，无任何任务特定结构改动</text>
+      <text x="40" y="306" font-size="11.5" class="muted">• 词表扩展注入 itemic；embedding 从 N(μ,Σ) 初始化</text>
+      <text x="40" y="328" font-size="11.5" class="muted">• tied embeddings 小模型(0.6/1.7/4B) vs 独立投影大模型(8B+)</text>
+      <text x="40" y="350" font-size="11.5" class="muted">• 思维控制 /think /no_think + enable_thinking 解码</text>
+      <text x="40" y="372" font-size="11.5" class="muted">• 长上下文 32K 支撑超长交互历史（单用户平均 458 条）</text>
+    </g>
+
+    <g data-id="node-keyrepo">
+      <rect x="660" y="232" width="636" height="176" rx="12" fill="#161b22" stroke="#2d333b"/>
+      <text x="676" y="260" font-size="13.5" font-weight="700" fill="#9cc9ff">代码仓库结构（对应实现）</text>
+      <text x="676" y="284" font-size="11.5" class="mono muted">tokenizer/        → res_kmeans.py 残差量化</text>
+      <text x="676" y="304" font-size="11.5" class="mono muted">pretrain/         → Onerec LLM 两阶段预训练 (MPI)</text>
+      <text x="676" y="324" font-size="11.5" class="mono muted">verl_distillation/→ onpolicy_distill 蒸馏</text>
+      <text x="676" y="344" font-size="11.5" class="mono muted">verl_rl/recipe/onerec → GRPO + two-stage rollout</text>
+      <text x="676" y="364" font-size="11.5" class="mono muted">benchmarks/       → RecIF-Bench 评测</text>
+      <text x="676" y="384" font-size="11.5" class="mono muted">data/onerec_data/ → 语料加工脚本</text>
+    </g>
+  </svg>
+  </div>
+</section>
+
+<!-- ================= 5 部署架构 ================= -->
+<section id="s5">
+  <div class="sec-head"><span class="sec-num">07</span><h2>推理部署架构 · 训练(Rollout) vs 评测/在线</h2></div>
+  <p class="sec-desc">
+    OpenOneRec 的推理负载跑在两套由 Ray 编排、vLLM 承载的拓扑里：<strong>RL 训练期</strong>用「单控制器 + colocated Actor/Rollout/Ref Worker + FSDP2 分片 + 内嵌 vLLM rollout（TP=1）」；
+    <strong>评测/在线期</strong>用「RayVllmGenerator + 数据并行多 vLLM Worker（TP 同节点分组）」。
+  </p>
+
+  <!-- 图 1：RL 训练侧拓扑 -->
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 470" role="img" aria-label="rl training deployment topology">
+    <defs>
+      <marker id="ar5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+      <linearGradient id="g5a" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a2030"/><stop offset="1" stop-color="#24101a"/></linearGradient>
+      <linearGradient id="g5b" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a5a5c"/><stop offset="1" stop-color="#14262b"/></linearGradient>
+    </defs>
+    <text x="24" y="32" font-size="19" font-weight="700" fill="#fff">① RL 训练期 · Ray 单控制器 + colocated Worker（FSDP2 + vLLM rollout）</text>
+
+    <!-- controller -->
+    <g data-id="dep-ctrl" class="nd" transform="translate(470,54)">
+      <rect class="box" width="380" height="84" rx="12" fill="#123036" stroke="#39c5cf"/>
+      <text x="16" y="26" font-size="13.5" font-weight="700" fill="#7fe0e6">Ray Head · 单控制器 TaskRunner</text>
+      <text x="16" y="46" font-size="11.5" fill="#bfe8ea">OneRecTaskRunner.remote() → RayPPOTrainer.init_workers()</text>
+      <text x="16" y="64" font-size="11" class="mono" fill="#7fe0e6">resource_pool_spec = {pool: [N_GPU]×N_NODE}</text>
+    </g>
+
+    <!-- role box -->
+    <g data-id="dep-roles" class="nd" transform="translate(24,190)">
+      <rect class="box" width="436" height="142" rx="12" fill="url(#g5a)" stroke="#bc8cff"/>
+      <text x="16" y="26" font-size="13.5" font-weight="700" fill="#d6bbff">Colocated ActorRolloutRef Worker（同池共驻）</text>
+      <text x="16" y="48" font-size="11.5" fill="#e4d5f7">Actor：FSDP2 分片权重 · 梯度检查点 · 激活卸载</text>
+      <text x="16" y="68" font-size="11.5" fill="#e4d5f7">Rollout：每 GPU 内嵌 vLLM 引擎 · two_stage 生成</text>
+      <text x="16" y="88" font-size="11.5" fill="#e4d5f7">RefPolicy：低方差 KL（low_var_kl）· use_kl_loss</text>
+      <rect x="16" y="104" width="404" height="26" rx="6" fill="#241634"/>
+      <text x="26" y="121" font-size="10.5" class="mono" fill="#d6bbff">main_onerec_ppo.py L185-214 · role_worker_mapping</text>
+    </g>
+    <path class="flow" d="M660,190 L560,190 L560,154" marker-end="url(#ar5a)" style="stroke:#39c5cf"/>
+
+    <!-- rollout detail -->
+    <g data-id="dep-rollout" class="nd" transform="translate(500,190)">
+      <rect class="box" width="400" height="142" rx="12" fill="url(#g5b)" stroke="#f0883e"/>
+      <text x="16" y="26" font-size="13.5" font-weight="700" fill="#ffcfa8">Rollout 引擎（vLLM · TP=1）</text>
+      <text x="16" y="48" font-size="11.5" fill="#f3d9c3">rollout.name=two_stage · backend=vllm</text>
+      <text x="16" y="68" font-size="11.5" fill="#f3d9c3">tensor_model_parallel_size=1（数据并行 rollout）</text>
+      <text x="16" y="88" font-size="11.5" fill="#f3d9c3">gpu_mem_util=0.8 · max_num_seqs=2048</text>
+      <rect x="16" y="104" width="368" height="26" rx="6" fill="#3a2112"/>
+      <text x="26" y="121" font-size="10.5" class="mono" fill="#ffb387">run_grpo.sh · n=1 · beam=32 · ≤1024 CoT</text>
+    </g>
+    <path class="flow" d="M660,104 L660,160" marker-end="url(#ar5a)" style="stroke:#39c5cf"/>
+
+    <!-- critic disabled -->
+    <g data-id="dep-critic" class="nd" transform="translate(940,190)">
+      <rect class="box" width="356" height="142" rx="12" fill="#161b22" stroke="#3a4350"/>
+      <text x="16" y="26" font-size="13.5" font-weight="700" fill="#8b949e">Critic（disabled）· RewardModel 按需</text>
+      <text x="16" y="48" font-size="11.5" fill="#8b949e">critic.enable=False — GRPO 无需价值网络</text>
+      <text x="16" y="68" font-size="11.5" fill="#8b949e">reward_model.enable 默认 False</text>
+      <text x="16" y="88" font-size="11.5" fill="#8b949e">奖励在 CPU 侧 compute_score 计算</text>
+      <line x1="16" y1="110" x2="340" y2="40" stroke="#8b949e" stroke-width="1.4"/>
+    </g>
+
+    <!-- gpu grid -->
+    <g data-id="dep-gpu" transform="translate(24,370)">
+      <rect x="0" y="0" width="1272" height="82" rx="12" fill="#161b22" stroke="#2d333b"/>
+      <text x="16" y="24" font-size="12.5" font-weight="700" fill="#8b949e">每卡共驻：FSDP2 权重分片（训练）+ vLLM 引擎（rollout）—— 同一组 N_GPU×N_NODE</text>
+      <g transform="translate(16,34)">
+        <rect class="box" x="0" y="0" width="140" height="38" rx="8" fill="#1c2b3a" stroke="#58a6ff"/>
+        <text x="8" y="24" font-size="10.5" class="mono" fill="#9cc9ff">GPU 0 · FSDP shard</text>
+      </g>
+      <g transform="translate(152,34)">
+        <rect class="box" x="0" y="0" width="140" height="38" rx="8" fill="#1c2b3a" stroke="#58a6ff"/>
+        <text x="8" y="24" font-size="10.5" class="mono" fill="#9cc9ff">GPU 1 · +vLLM 引擎</text>
+      </g>
+      <g transform="translate(304,34)">
+        <rect class="box" x="0" y="0" width="140" height="38" rx="8" fill="#1c2b3a" stroke="#58a6ff"/>
+        <text x="8" y="24" font-size="10.5" class="mono" fill="#9cc9ff">GPU 2 · +vLLM 引擎</text>
+      </g>
+      <text x="560" y="59" font-size="12" fill="#8b949e">… N_GPUS×N_NODES（默认 8×1）</text>
+    </g>
+  </svg>
+  </div>
+
+  <!-- 图 2：评测/在线侧拓扑 -->
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 430" role="img" aria-label="eval inference deployment topology">
+    <defs>
+      <marker id="ar5b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+      <linearGradient id="g5c" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d2a13"/><stop offset="1" stop-color="#1f150a"/></linearGradient>
+    </defs>
+    <text x="24" y="32" font-size="19" font-weight="700" fill="#fff">② 评测 / 在线期 · RayVllmGenerator 数据并行多 Worker</text>
+
+    <g data-id="dep-entry" class="nd" transform="translate(24,54)">
+      <rect class="box" width="380" height="110" rx="12" fill="#123036" stroke="#39c5cf"/>
+      <text x="16" y="26" font-size="13.5" font-weight="700" fill="#7fe0e6">evaluate.py · 任务分派</text>
+      <text x="16" y="48" font-size="11.5" fill="#bfe8ea">task_types + worker_batch_size 按任务</text>
+      <text x="16" y="68" font-size="11.5" fill="#bfe8ea">batch 5(rec_reason) ~ 3200(label_pred)</text>
+      <text x="16" y="88" font-size="11" class="mono" fill="#7fe0e6">--num_beams 32 · thinking=1 · gpu_mem 0.8~0.9</text>
+    </g>
+    <path class="flow" d="M404,109 L470,109" marker-end="url(#ar5b)"/>
+
+    <g data-id="dep-det" class="nd" transform="translate(478,54)">
+      <rect class="box" width="400" height="110" rx="12" fill="url(#g5c)" stroke="#f0883e"/>
+      <text x="16" y="26" font-size="13.5" font-weight="700" fill="#ffcfa8">RayMixin · GPU 发现与分组</text>
+      <text x="16" y="48" font-size="11.5" fill="#f3d9c3">扫描存活节点 GPU → 全局 GPU 列表</text>
+      <text x="16" y="68" font-size="11.5" fill="#f3d9c3">按 TP 分组，默认同节点约束</text>
+      <text x="16" y="88" font-size="11" class="mono" fill="#ffb387">allow_cross_node_tensor_parallel=False</text>
+    </g>
+    <path class="flow" d="M878,109 L944,109" marker-end="url(#ar5b)"/>
+
+    <g data-id="dep-worker" class="nd" transform="translate(952,54)">
+      <rect class="box" width="344" height="110" rx="12" fill="#123036" stroke="#39c5cf"/>
+      <text x="16" y="26" font-size="13.5" font-weight="700" fill="#7fe0e6">RayVllmWorker（×num_workers）</text>
+      <text x="16" y="48" font-size="11.5" fill="#bfe8ea">每 worker 一个 vLLM LLM 实例</text>
+      <text x="16" y="68" font-size="11.5" fill="#bfe8ea">数据并行：worker_batch_size × 内部分批</text>
+      <text x="16" y="88" font-size="11" class="mono" fill="#7fe0e6">SamplingParams / BeamSearchParams</text>
+    </g>
+
+    <!-- worker grid -->
+    <g data-id="dep-grid" transform="translate(24,220)">
+      <rect x="0" y="0" width="1272" height="150" rx="12" fill="#161b22" stroke="#2d333b"/>
+      <text x="16" y="26" font-size="12.5" font-weight="700" fill="#8b949e">Worker 网格（num_workers = ⌊总GPU / TP⌋）· 每 worker 独立 vLLM 引擎，KV/权重不共享</text>
+      <g class="nd">
+        <rect class="box" x="16" y="42" width="230" height="74" rx="9" fill="#1c2b3a" stroke="#58a6ff"/>
+        <text x="28" y="64" font-size="12" font-weight="700" fill="#9cc9ff">Worker 0 · vLLM LLM</text>
+        <text x="28" y="84" font-size="10.5" class="mono" fill="#cfe0f0">GPU[0..TP) · beam=32</text>
+        <text x="28" y="102" font-size="10.5" class="muted">本任务 worker_batch_size</text>
+      </g>
+      <g class="nd">
+        <rect class="box" x="262" y="42" width="230" height="74" rx="9" fill="#1c2b3a" stroke="#58a6ff"/>
+        <text x="274" y="64" font-size="12" font-weight="700" fill="#9cc9ff">Worker 1 · vLLM LLM</text>
+        <text x="274" y="84" font-size="10.5" class="mono" fill="#cfe0f0">GPU[TP..2TP)</text>
+        <text x="274" y="102" font-size="10.5" class="muted">数据并行 · 分片样本</text>
+      </g>
+      <g class="nd">
+        <rect class="box" x="508" y="42" width="230" height="74" rx="9" fill="#1c2b3a" stroke="#58a6ff"/>
+        <text x="520" y="64" font-size="12" font-weight="700" fill="#9cc9ff">Worker k · vLLM LLM</text>
+        <text x="520" y="84" font-size="10.5" class="mono" fill="#cfe0f0">GPU[k·TP..(k+1)TP)</text>
+        <text x="520" y="102" font-size="10.5" class="muted">同节点 TP 约束</text>
+      </g>
+      <g class="nd">
+        <rect class="box" x="808" y="42" width="388" height="74" rx="9" fill="#1d3a24" stroke="#3fb950"/>
+        <text x="820" y="64" font-size="12" font-weight="700" fill="#a6f3b6">任务完成后 cleanup()</text>
+        <text x="820" y="84" font-size="10.5" class="mono" fill="#d9f4dd">ray.kill(worker) · ray.shutdown()</text>
+        <text x="820" y="102" font-size="10.5" class="muted">在指标计算前释放显存防 OOM</text>
+      </g>
+    </g>
+  </svg>
+  </div>
+
+  <!-- 对比表 -->
+  <div class="grid2">
+    <div>
+      <table class="tbl">
+        <thead><tr><th style="width:150px">维度</th><th>RL 训练期 Rollout</th></tr></thead>
+        <tbody>
+          <tr><td class="stage">引擎</td><td class="mono">内嵌 vLLM（backend=vllm）</td></tr>
+          <tr><td class="stage">并行</td><td class="mono">FSDP2（训练）+ TP=1（rollout）</td></tr>
+          <tr><td class="stage">拓扑</td><td class="mono">colocated ActorRolloutRef 同池</td></tr>
+          <tr><td class="stage">器权重</td><td>actor/ref FSDP2 分片</td></tr>
+          <tr><td class="stage">gpu_mem</td><td class="mono">util 0.8 · max_num_seqs 2048</td></tr>
+          <tr><td class="stage">生成路径</td><td class="mono">two_stage · beam 32 · ≤1024 CoT</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <table class="tbl">
+        <thead><tr><th style="width:150px">维度</th><th>评测 / 在线期</th></tr></thead>
+        <tbody>
+          <tr><td class="stage">引擎</td><td class="mono">vLLM LLM（RayVllmWorker）</td></tr>
+          <tr><td class="stage">并行</td><td class="mono">数据并行 · TP 同节点分组</td></tr>
+          <tr><td class="stage">拓扑</td><td class="mono">RayVllmGenerator → N worker</td></tr>
+          <tr><td class="stage">器权重</td><td>每 worker 独立整份权重</td></tr>
+          <tr><td class="stage">gpu_mem</td><td class="mono">0.8 ~ 0.9（rec_reason）</td></tr>
+          <tr><td class="stage">生成路径</td><td class="mono">beam / sampling · 按任务分派</td></tr>
+        </tbody>
+      </table>
+      <div class="note">
+        来源：<code>run_grpo.sh</code> · <code>main_onerec_ppo.py L185-244</code> · <code>onerec_ray_trainer.py</code> · <code>ray-vllm/utils/generator.py</code> · <code>base_generator.py RayMixin/VllmMixin</code>。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 0 全景 ================= -->
+<section id="s0">
+  <div class="sec-head"><span class="sec-num">08</span><h2>一条推理请求的负载全景</h2></div>
+  <p class="sec-desc">
+    一条推荐请求从「用户历史 → itemic 上下文」到「命中 K 个候选」的完整负载链：数值越小 = 负载越轻。深色节点可点击查看源码依据。
+  </p>
+
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 520" role="img" aria-label="inference load panorama">
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+      <linearGradient id="gA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a5a5c"/><stop offset="1" stop-color="#14262b"/></linearGradient>
+      <linearGradient id="gB" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a2030"/><stop offset="1" stop-color="#24101a"/></linearGradient>
+      <linearGradient id="gC" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d2a13"/><stop offset="1" stop-color="#1f150a"/></linearGradient>
+    </defs>
+    <text x="24" y="34" font-size="20" font-weight="700" fill="#fff">推理负载全景 · 请求生命周期</text>
+    <text x="640" y="34" font-size="12" fill="#8b949e">数值 = 每请求相对负载量级</text>
+
+    <!-- 1 prompt 构造 -->
+    <g data-id="ld-prompt" class="nd" transform="translate(24,60)">
+      <rect class="box" width="270" height="128" rx="12" fill="url(#gA)" stroke="#39c5cf"/>
+      <text x="18" y="28" font-size="13.5" font-weight="700" fill="#7fe0e6">① 上下文序列化</text>
+      <text x="18" y="50" font-size="11.5" fill="#bfe8ea">用户历史 → itemic token 序列</text>
+      <text x="18" y="70" font-size="11.5" fill="#bfe8ea">+ 系统/指令 prompt</text>
+      <rect x="18" y="84" width="234" height="30" rx="6" fill="#123036"/>
+      <text x="30" y="103" font-size="11" class="mono" fill="#7fe0e6">Qwen3 chat template · add_generation</text>
+    </g>
+    <path class="flow" d="M294,124 L320,124" marker-end="url(#ar)"/>
+
+    <!-- 2 tokenize -->
+    <g data-id="ld-tokenize" class="nd" transform="translate(328,60)">
+      <rect class="box" width="190" height="128" rx="12" fill="url(#gA)" stroke="#39c5cf"/>
+      <text x="16" y="28" font-size="13.5" font-weight="700" fill="#7fe0e6">② Tokenize</text>
+      <text x="16" y="50" font-size="11.5" fill="#bfe8ea">文本 + itemic 词表</text>
+      <rect x="16" y="64" width="158" height="32" rx="6" fill="#123036"/>
+      <text x="28" y="84" font-size="11" class="mono" fill="#7fe0e6">max_prompt 10,240</text>
+      <text x="16" y="116" font-size="11" fill="#bfe8ea">left_pad · truncation</text>
+    </g>
+    <path class="flow" d="M518,124 L540,124" marker-end="url(#ar)"/>
+
+    <!-- 3 prefill -->
+    <g data-id="ld-prefill" class="nd" transform="translate(548,60)">
+      <rect class="box" width="250" height="128" rx="12" fill="url(#gB)" stroke="#bc8cff"/>
+      <text x="16" y="28" font-size="13.5" font-weight="700" fill="#d6bbff">③ Prefill（算力密集）</text>
+      <text x="16" y="48" font-size="11.5" fill="#e4d5f7">一次性并行前向，算 O(S·N)</text>
+      <text x="16" y="66" font-size="11.5" fill="#e4d5f7">生成 KV cache（S 长度）</text>
+      <text x="16" y="86" font-size="11.5" fill="#e4d5f7">瓶颈 = FLOPs / 显存带宽</text>
+      <rect x="16" y="100" width="218" height="22" rx="5" fill="#241634"/>
+      <text x="26" y="115" font-size="10.5" class="mono" fill="#d6bbff">FLOPs_prefill = 6·N·S（≈2N·S×3）</text>
+    </g>
+    <path class="flow" d="M798,124 L816,124" marker-end="url(#ar)"/>
+
+    <!-- 4 decode x2 -->
+    <g data-id="ld-decode" class="nd" transform="translate(824,60)">
+      <rect class="box" width="270" height="128" rx="12" fill="url(#gB)" stroke="#bc8cff"/>
+      <text x="16" y="28" font-size="13.5" font-weight="700" fill="#d6bbff">④ Decode（访存密集）</text>
+      <text x="16" y="50" font-size="11.5" fill="#e4d5f7">逐 token 自回归 ×2 阶段</text>
+      <text x="16" y="70" font-size="11.5" fill="#e4d5f7">每次读全部 KV cache</text>
+      <text x="16" y="90" font-size="11.5" fill="#e4d5f7">瓶颈 = 显存带宽（IO-bound）</text>
+      <rect x="16" y="104" width="238" height="22" rx="5" fill="#241634"/>
+      <text x="26" y="119" font-size="10.5" class="mono" fill="#d6bbff">每 token ≈ 2N 参数读 + KV 读</text>
+    </g>
+    <path class="flow" d="M1094,124 L1116,124" marker-end="url(#ar)"/>
+
+    <!-- 5 output -->
+    <g data-id="ld-out" class="nd" transform="translate(1130,60)">
+      <rect class="box" width="166" height="128" rx="12" fill="url(#gA)" stroke="#39c5cf"/>
+      <text x="16" y="28" font-size="13.5" font-weight="700" fill="#7fe0e6">⑤ 候选输出</text>
+      <text x="16" y="50" font-size="11.5" fill="#bfe8ea">itemic 3-token</text>
+      <text x="16" y="70" font-size="11.5" fill="#bfe8ea">→ SID → PID 映射</text>
+      <text x="16" y="90" font-size="11.5" fill="#bfe8ea">→ recall@32 评测</text>
+    </g>
+
+    <!-- 底部：两阶段 + kv -->
+    <g data-id="ld-stage" class="nd" transform="translate(24,220)">
+      <rect class="box" width="420" height="132" rx="12" fill="url(#gC)" stroke="#f0883e"/>
+      <text x="18" y="28" font-size="13.5" font-weight="700" fill="#ffcfa8">⑥ 两阶段生成（负载放大器）</text>
+      <text x="18" y="52" font-size="11.5" fill="#f3d9c3">Stage1：采样思维 CoT，直到  response（≤1024）</text>
+      <text x="18" y="72" font-size="11.5" fill="#f3d9c3">Stage2：拼 前缀 + prompt + CoT，beam search</text>
+      <text x="18" y="92" font-size="11.5" fill="#f3d9c3">→ 每条 prompt 二次 prefill（CoT 加入上下文）</text>
+      <text x="18" y="112" font-size="11" class="mono" fill="#ffb387">额外 prefill ≈ CoT 长度；output 放大 ×beam</text>
+    </g>
+
+    <g data-id="ld-kv" class="nd" transform="translate(460,220)">
+      <rect class="box" width="420" height="132" rx="12" fill="#1c2b3a" stroke="#58a6ff"/>
+      <text x="18" y="28" font-size="13.5" font-weight="700" fill="#9cc9ff">⑦ KV Cache 显存（长序列代价）</text>
+      <text x="18" y="52" font-size="11" class="mono" fill="#9cc9ff">KV = 2 × L × H_kv × D_head × bytes</text>
+      <text x="18" y="72" font-size="11.5" fill="#cfe0f0">8B / 32K / bf16 ≈ 4.8 GB（GQA 8 KV 头）</text>
+      <text x="18" y="92" font-size="11.5" fill="#cfe0f0">prompt 10K KV ≈ 1.5 GB · 并发上限由 KV 预算决定</text>
+      <text x="18" y="112" font-size="11" class="mono" fill="#9cc9ff">gpu_mem_util = 0.8（评测）/ 0.9（rec_reason）</text>
+    </g>
+
+    <g data-id="ld-speed" class="nd" transform="translate(896,220)">
+      <rect class="box" width="400" height="132" rx="12" fill="#1d3a24" stroke="#3fb950"/>
+      <text x="18" y="28" font-size="13.5" font-weight="700" fill="#a6f3b6">⑧ 负载优化（降载点）</text>
+      <text x="18" y="52" font-size="11.5" fill="#d9f4dd">prefix caching：跨候选共享 CoT KV</text>
+      <text x="18" y="72" font-size="11.5" fill="#d9f4dd">chunked prefill + continuous batching</text>
+      <text x="18" y="92" font-size="11.5" fill="#d9f4dd">tensor parallel 切分 KV cache</text>
+      <text x="18" y="112" font-size="11.5" fill="#d9f4dd">activation offload / remove padding</text>
+    </g>
+  </svg>
+  </div>
+  <div class="hint">💡 核心矛盾：<code>decode 访存密集</code> × <code>beam/128 候选放大</code> × <code>10K 长 prompt KV</code>，三者叠加是生成式推荐负载的关键特征。</div>
+</section>
+
+<!-- ================= 1 任务负载特征 ================= -->
+<section id="s1">
+  <div class="sec-head"><span class="sec-num">09</span><h2>任务负载特征 · 不同任务完全不同的负载画像</h2></div>
+  <p class="sec-desc">
+    RecIF-Bench 的 8 个任务在推理负载上差异巨大：推荐类任务是「短输出 + 超长输入 + 巨大候选」；解释/理解类任务则是「长输出 + 适中输入」。
+  </p>
+
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 480" role="img" aria-label="task load profile">
+    <defs>
+      <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+    </defs>
+    <text x="24" y="34" font-size="20" font-weight="700" fill="#fff">任务负载画像（prefill ↔ decode 权衡）</text>
+
+    <!-- axes -->
+    <line x1="80" y1="50" x2="80" y2="420" stroke="#2d333b" stroke-width="1.4"/>
+    <line x1="80" y1="420" x2="1280" y2="420" stroke="#2d333b" stroke-width="1.4"/>
+    <text x="80" y="438" text-anchor="middle" font-size="11" fill="#8b949e">短 ← 输出长度（decode 负载） → 长</text>
+    <text x="52" y="235" font-size="11" fill="#8b949e" transform="rotate(-90 52 235)" text-anchor="middle">输入长度（prefill / KV 负载）</text>
+
+    <!-- quadrant labels -->
+    <text x="100" y="68" font-size="11" fill="#3fb950">Ⅰ 短输出 · 短输入（轻）</text>
+    <text x="640" y="68" font-size="11" fill="#bc8cff">Ⅱ 长输出 · 短输入（decode 重）</text>
+    <text x="100" y="416" font-size="11" fill="#f0883e">Ⅲ 短输出 · 长输入（KV 重·候选放大）</text>
+    <text x="640" y="416" font-size="11" fill="#f85149">Ⅳ 长输出 · 长输入（最重）</text>
+
+    <!-- 推荐任务 (短输出，长输入，下方) -->
+    <g data-id="t-reco" class="nd">
+      <circle cx="300" cy="360" r="13" fill="#f0883e" stroke="#ffb387"/>
+      <rect class="box" x="180" y="312" width="240" height="66" rx="8" fill="#24140c" stroke="#f0883e"/>
+      <text x="192" y="332" font-size="12.5" font-weight="700" fill="#ffcfa8">短视频/广告/商品/标签条件</text>
+      <text x="192" y="350" font-size="11" class="muted">输出 3 token · 输入 ~10K · 128 序列</text>
+      <text x="192" y="364" font-size="10.5" class="mono" fill="#ffb387">prefill 主导 + beam 放大</text>
+    </g>
+
+    <g data-id="t-interactive" class="nd">
+      <circle cx="560" cy="330" r="11" fill="#f0883e" stroke="#ffb387"/>
+      <rect class="box" x="470" y="292" width="210" height="62" rx="8" fill="#24140c" stroke="#f0883e"/>
+      <text x="482" y="312" font-size="12" font-weight="700" fill="#ffcfa8">交互推荐 Interactive</text>
+      <text x="482" y="330" font-size="11" class="muted">画像+搜索词 · 关闭优化</text>
+      <text x="482" y="344" font-size="10.5" class="mono" fill="#ffb387">DISABLE_OPTIMIZATIONS</text>
+    </g>
+
+    <g data-id="t-labelpred" class="nd">
+      <circle cx="300" cy="250" r="10" fill="#39c5cf" stroke="#7fe0e6"/>
+      <rect class="box" x="160" y="230" width="260" height="48" rx="8" fill="#123036" stroke="#39c5cf"/>
+      <text x="172" y="250" font-size="12" font-weight="700" fill="#7fe0e6">标签预测 label_pred</text>
+      <text x="172" y="266" font-size="10.5" class="mono" fill="#7fe0e6">logprob 抽取 · max_logprobs 10000</text>
+    </g>
+
+    <g data-id="t-understand" class="nd">
+      <circle cx="880" cy="140" r="12" fill="#bc8cff" stroke="#d6bbff"/>
+      <rect class="box" x="700" y="90" width="260" height="52" rx="8" fill="#1d1730" stroke="#bc8cff"/>
+      <text x="712" y="110" font-size="12" font-weight="700" fill="#d6bbff">Item Understanding</text>
+      <text x="712" y="128" font-size="11" class="muted">SID → caption · 长输出 · batch 250</text>
+    </g>
+
+    <g data-id="t-reason" class="nd">
+      <circle cx="1040" cy="360" r="13" fill="#f85149" stroke="#ffb3a8"/>
+      <rect class="box" x="840" y="312" width="300" height="72" rx="8" fill="#33101a" stroke="#f85149"/>
+      <text x="852" y="332" font-size="12.5" font-weight="700" fill="#ffb3a8">推荐解释 rec_reason（最重）</text>
+      <text x="852" y="350" font-size="11" class="muted">长思维 + 长解释 · gpu_mem 0.9</text>
+      <text x="852" y="368" font-size="10.5" class="mono" fill="#ffb3a8">batch 5 · 关闭 chunked_prefill</text>
+    </g>
+
+    </svg>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <table class="tbl">
+        <thead><tr><th>任务</th><th>batch</th><th>束/序列</th><th>gpu_mem</th><th>主导负载</th></tr></thead>
+        <tbody>
+          <tr><td class="stage">video</td><td class="mono">1875</td><td class="mono">32 / 32</td><td class="mono">0.8</td><td>prefill + 候选放大</td></tr>
+          <tr><td class="stage">product</td><td class="mono">1875</td><td class="mono">32 / 32</td><td class="mono">0.8</td><td>prefill + 候选放大</td></tr>
+          <tr><td class="stage">ad</td><td class="mono">1875</td><td class="mono">32 / 32</td><td class="mono">0.8</td><td>prefill + 候选放大</td></tr>
+          <tr><td class="stage">label_cond</td><td class="mono">1875</td><td class="mono">32 / 32</td><td class="mono">0.8</td><td>prefill + 候选放大</td></tr>
+          <tr><td class="stage">interactive</td><td class="mono">250</td><td class="mono">32 / 32</td><td class="mono">0.8</td><td>关优化 · 长 prompt</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <table class="tbl">
+        <thead><tr><th>任务</th><th>batch</th><th>输出</th><th>gpu_mem</th><th>主导负载</th></tr></thead>
+        <tbody>
+          <tr><td class="stage">item_understand</td><td class="mono">250</td><td>caption</td><td class="mono">0.8</td><td>decode 长生成</td></tr>
+          <tr><td class="stage">label_pred</td><td class="mono">3200</td><td>logprob</td><td class="mono">0.8</td><td>logprob 抽取</td></tr>
+          <tr><td class="stage">rec_reason</td><td class="mono">5</td><td>长解释</td><td class="mono">0.9</td><td>长上下文 + 关优化</td></tr>
+        </tbody>
+      </table>
+      <div class="note">
+        来源：<code>benchmarks/eval_script.sh</code> 与 <code>recommendation/config.py</code>。<br>
+        推荐任务 <code>num_return_sequences=128</code>、<code>max_new_tokens=3</code>（config 默认），评测脚本进一步用 <code>beam 32</code> 覆盖。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 2 两阶段与束搜索 ================= -->
+<section id="s2">
+  <div class="sec-head"><span class="sec-num">10</span><h2>两阶段生成 &amp; 束搜索 · 负载放大链路</h2></div>
+  <p class="sec-desc">
+    训练(Rollout)与评测(Generator)共用同一两阶段范式：先采样思维 CoT，再把 CoT 拼回 prompt 做束搜索。每一步都会重复 prefill。
+  </p>
+
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 470" role="img" aria-label="two-stage and beam load">
+    <defs>
+      <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+      <marker id="ar3r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow" fill="#f0883e"/></marker>
+    </defs>
+    <text x="24" y="34" font-size="20" font-weight="700" fill="#fff">两阶段 rollout / 生成 · 负载定量</text>
+
+    <!-- stage1 -->
+    <g data-id="ts-s1" class="nd" transform="translate(24,64)">
+      <rect class="box" width="380" height="150" rx="12" fill="#24140c" stroke="#f0883e"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#ffcfa8">Stage 1 · 思维采样</text>
+      <text x="18" y="52" font-size="11.5" fill="#f3d9c3">SamplingParams(temperature, top_p, top_k)</text>
+      <text x="18" y="72" font-size="11.5" fill="#f3d9c3">stop=[" response"] · include_stop_in_output</text>
+      <rect x="18" y="86" width="344" height="34" rx="6" fill="#3a2112"/>
+      <text x="30" y="107" font-size="11" class="mono" fill="#ffb387">max_tokens = stage1_max ≤ 1024</text>
+      <text x="18" y="140" font-size="11" class="muted">每条 prompt 1 条 CoT（n=1）</text>
+    </g>
+    <path class="flow" d="M404,139 L452,139" style="stroke:#f0883e" marker-end="url(#ar3r)"/>
+
+    <!-- concat -->
+    <g data-id="ts-concat" class="nd" transform="translate(460,64)">
+      <rect class="box" width="300" height="150" rx="12" fill="#1d2a3a" stroke="#58a6ff"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#9cc9ff">拼接 · 二次 prefill 前置</text>
+      <text x="18" y="54" font-size="11.5" fill="#cfe0f0">new_prompt = 原 prompt</text>
+      <text x="18" y="72" font-size="11.5" fill="#cfe0f0">          + CoT tokens</text>
+      <text x="18" y="90" font-size="11.5" fill="#cfe0f0">          + "\n&lt;|sid_begin|&gt;"</text>
+      <rect x="18" y="104" width="266" height="30" rx="6" fill="#0f2033"/>
+      <text x="30" y="124" font-size="10.5" class="mono" fill="#9cc9ff">OOV 过滤：tid &lt; vocab_size</text>
+    </g>
+    <path class="flow" d="M760,139 L808,139" style="stroke:#f0883e" marker-end="url(#ar3r)"/>
+
+    <!-- stage2 -->
+    <g data-id="ts-s2" class="nd" transform="translate(816,64)">
+      <rect class="box" width="480" height="150" rx="12" fill="#24140c" stroke="#f0883e"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#ffcfa8">Stage 2 · 束搜索 itemic</text>
+      <text x="18" y="52" font-size="11.5" fill="#f3d9c3">BeamSearchParams(beam_width=32, max_tokens=16)</text>
+      <text x="18" y="72" font-size="11.5" fill="#f3d9c3">inference_engine.beam_search()</text>
+      <rect x="18" y="86" width="446" height="30" rx="6" fill="#3a2112"/>
+      <text x="30" y="106" font-size="11" class="mono" fill="#ffb387">每 prompt 再次 prefill（含 CoT）→ KV 翻倍</text>
+      <text x="18" y="134" font-size="11" class="muted">返回全部 beam → 输出展开 batch × beam</text>
+    </g>
+
+    <!-- 负载放大表 -->
+    <g data-id="ts-amp" transform="translate(24,250)">
+      <rect x="0" y="0" width="620" height="190" rx="12" fill="#161b22" stroke="#2d333b"/>
+      <text x="18" y="26" font-size="13.5" font-weight="700" fill="#ffcfa8">负载放大因子（一条 prompt）</text>
+      <text x="18" y="52" font-size="11.5" class="muted">Stage1 prefill：S 长度（原 prompt）</text>
+      <text x="18" y="74" font-size="11.5" class="muted">Stage1 decode：L_cot 步（≤1024），每步读 S+t KV</text>
+      <text x="18" y="96" font-size="11.5" class="muted">Stage2 prefill：S + L_cot 长度（重复 prefill！）</text>
+      <text x="18" y="118" font-size="11.5" class="muted">Stage2 decode：beam × 3 token（每 beam 独立前向）</text>
+      <rect x="18" y="132" width="584" height="44" rx="8" fill="#24140c" stroke="#f0883e"/>
+      <text x="30" y="152" font-size="12" font-weight="700" fill="#ffcfa8">总 prefill ≈ 2S + L_cot</text>
+      <text x="30" y="168" font-size="11" class="mono" fill="#ffb387">总 decode ≈ L_cot + 3×beam（≈1024 + 96）</text>
+    </g>
+
+    <g data-id="ts-cache" transform="translate(660,250)">
+      <rect x="0" y="0" width="636" height="190" rx="12" fill="#1c2b3a" stroke="#3a4350"/>
+      <text x="18" y="26" font-size="13.5" font-weight="700" fill="#9cc9ff">两项关键优化可显著降载</text>
+      <g data-id="ts-pc" class="nd">
+        <rect x="18" y="42" width="600" height="56" rx="8" fill="#123036" stroke="#39c5cf"/>
+        <text x="30" y="62" font-size="12.5" font-weight="700" fill="#7fe0e6">① Prefix Caching：共享 CoT 前缀的 KV</text>
+        <text x="30" y="82" font-size="11" class="muted">同一 prompt 展开的 beam 共享 (prompt+CoT) KV，消除 Stage2 重复 prefill</text>
+      </g>
+      <g data-id="ts-cb" class="nd">
+        <rect x="18" y="108" width="600" height="66" rx="8" fill="#123036" stroke="#39c5cf"/>
+        <text x="30" y="128" font-size="12.5" font-weight="700" fill="#7fe0e6">② Continuous Batching + chunked prefill</text>
+        <text x="30" y="148" font-size="11" class="muted">把 prefill/decode 混合调度，短输出任务可大幅提升 GPU 利用率</text>
+        <text x="30" y="164" font-size="10.5" class="mono" fill="#7fe0e6">注意：interactive / rec_reason 显式关闭优化（长 prompt）</text>
+      </g>
+    </g>
+  </svg>
+  </div>
+</section>
+
+<!-- ================= 3 瓶颈与优化 ================= -->
+<section id="s3">
+  <div class="sec-head"><span class="sec-num">11</span><h2>瓶颈定位 &amp; 优化矩阵</h2></div>
+  <p class="sec-desc">把生成式推荐推理负载拆成「算力 / 显存 / 候选放大 / 编排」四类瓶颈，逐条给出已落地与可落地的优化。</p>
+
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 470" role="img" aria-label="bottlenecks and optimization">
+    <defs>
+      <marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+    </defs>
+    <text x="24" y="34" font-size="20" font-weight="700" fill="#fff">瓶颈 ← 优化映射</text>
+
+    <!-- 4 bottlenecks -->
+    <g data-id="bn-flops" class="nd" transform="translate(24,56)">
+      <rect class="box" width="290" height="150" rx="12" fill="#33101a" stroke="#f85149"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#ffb3a8">B1 · 算力瓶颈（prefill）</text>
+      <text x="18" y="54" font-size="11.5" fill="#f3d0d0">10K prompt 一次性前向</text>
+      <text x="18" y="72" font-size="11.5" fill="#f3d0d0">FLOPs ∝ 6·N·S</text>
+      <text x="18" y="92" font-size="11" class="muted">两阶段二次 prefill 放大</text>
+      <text x="18" y="112" font-size="11" class="mono" fill="#ffb3a8">MFU 统计钩子已置</text>
+    </g>
+    <g data-id="bn-kv" class="nd" transform="translate(330,56)">
+      <rect class="box" width="290" height="150" rx="12" fill="#1c2b3a" stroke="#58a6ff"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#9cc9ff">B2 · 显存瓶颈（KV cache）</text>
+      <text x="18" y="54" font-size="11.5" fill="#cfe0f0">KV ∝ L×H_kv×D_head×S</text>
+      <text x="18" y="72" font-size="11.5" fill="#cfe0f0">32K 窗口 + bf16 权重</text>
+      <text x="18" y="94" font-size="11" class="mono" fill="#9cc9ff">gpu_mem_util 0.8~0.9</text>
+    </g>
+    <g data-id="bn-beam" class="nd" transform="translate(636,56)">
+      <rect class="box" width="290" height="150" rx="12" fill="#24140c" stroke="#f0883e"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#ffcfa8">B3 · 候选放大（beam）</text>
+      <text x="18" y="54" font-size="11.5" fill="#f3d9c3">beam=32 → 每条 prompt 输出 ×32</text>
+      <text x="18" y="72" font-size="11.5" fill="#f3d9c3">评测 beam=32 覆盖默认</text>
+      <text x="18" y="94" font-size="11" class="muted">RL 组共享 UID 分组</text>
+    </g>
+    <g data-id="bn-sched" class="nd" transform="translate(942,56)">
+      <rect class="box" width="354" height="150" rx="12" fill="#1d3a24" stroke="#3fb950"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#a6f3b6">B4 · 编排/调度</text>
+      <text x="18" y="54" font-size="11.5" fill="#d9f4dd">Ray worker 组 + FSDP2 分片</text>
+      <text x="18" y="72" font-size="11.5" fill="#d9f4dd">eval：Ray + vLLM 多 worker</text>
+      <text x="18" y="92" font-size="11.5" fill="#d9f4dd">TP 切分 / 同节点约束</text>
+    </g>
+
+    <!-- optimization mapping -->
+    <text x="24" y="250" font-size="13.5" font-weight="700" fill="#a6f3b6">优化手段（对应瓶颈）</text>
+    <g data-id="opt1" class="nd" transform="translate(24,268)">
+      <rect class="box" width="300" height="84" rx="10" fill="#123036" stroke="#39c5cf"/>
+      <text x="16" y="22" font-size="12.5" font-weight="700" fill="#7fe0e6">prefix caching → B1/B3</text>
+      <text x="16" y="44" font-size="11.5" class="muted">候选间共享 (prompt+CoT) KV，消除重复 prefill</text>
+      <text x="16" y="66" font-size="11" class="mono" fill="#7fe0e6">vLLM automatic_prefix_caching</text>
+    </g>
+    <g data-id="opt2" class="nd" transform="translate(340,268)">
+      <rect class="box" width="300" height="84" rx="10" fill="#123036" stroke="#39c5cf"/>
+      <text x="16" y="22" font-size="12.5" font-weight="700" fill="#7fe0e6">continuous batching → B1/B4</text>
+      <text x="16" y="44" font-size="11.5" class="muted">prefill/decode 混跑，提升短输出任务吞吐</text>
+      <text x="16" y="66" font-size="11" class="mono" fill="#7fe0e6">enable_chunked_prefill</text>
+    </g>
+    <g data-id="opt3" class="nd" transform="translate(656,268)">
+      <rect class="box" width="300" height="84" rx="10" fill="#123036" stroke="#39c5cf"/>
+      <text x="16" y="22" font-size="12.5" font-weight="700" fill="#7fe0e6">KV 分片 / TP → B2</text>
+      <text x="16" y="44" font-size="11.5" class="muted">tensor parallel 切分 KV cache 与权重</text>
+      <text x="16" y="66" font-size="11" class="mono" fill="#7fe0e6">tensor_model_parallel_size</text>
+    </g>
+    <g data-id="opt4" class="nd" transform="translate(972,268)">
+      <rect class="box" width="324" height="84" rx="10" fill="#123036" stroke="#39c5cf"/>
+      <text x="16" y="22" font-size="12.5" font-weight="700" fill="#7fe0e6">显存压缩 → B2</text>
+      <text x="16" y="44" font-size="11.5" class="muted">activation offload + remove padding</text>
+      <text x="16" y="66" font-size="11" class="mono" fill="#7fe0e6">use_remove_padding · offload</text>
+    </g>
+    <g data-id="opt5" class="nd" transform="translate(24,364)">
+      <rect class="box" width="620" height="66" rx="10" fill="#1d3a24" stroke="#3fb950"/>
+      <text x="16" y="24" font-size="12.5" font-weight="700" fill="#a6f3b6">域内杠杆 · 文本增强 itemic（迁移推理）</text>
+      <text x="16" y="46" font-size="11.5" class="muted">跨域迁移用 [itemic]+[keywords] 替代纯 itemic，碰撞率 0.47%，同等负载更高命中 → 等效降载</text>
+    </g>
+    <g data-id="opt6" class="nd" transform="translate(660,364)">
+      <rect class="box" width="636" height="66" rx="10" fill="#1d3a24" stroke="#3fb950"/>
+      <text x="16" y="24" font-size="12.5" font-weight="700" fill="#a6f3b6">长上下文取舍 · 关闭优化</text>
+      <text x="16" y="46" font-size="11.5" class="muted">interactive / rec_reason 长 prompt 关闭 chunked_prefill & prefix_caching，以稳定性换吞吐</text>
+    </g>
+  </svg>
+  </div>
+</section>
+
+<!-- ================= 0 硬件与假设 ================= -->
+<section id="s6">
+  <div class="sec-head"><span class="sec-num">12</span><h2>硬件规格与建模假设</h2></div>
+  <p class="sec-desc">预算的每一项都对应硬件或代码中的真实来源。点击节点查看依据。</p>
+
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 360" role="img" aria-label="hardware and assumptions">
+    <text x="24" y="34" font-size="20" font-weight="700" fill="#fff">硬件与假设 · 推导基石</text>
+
+    <g data-id="hw" class="nd" transform="translate(24,56)">
+      <rect class="box" width="300" height="150" rx="12" fill="#123036" stroke="#39c5cf"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#7fe0e6">Ascend 910B（硬件）</text>
+      <text x="18" y="52" font-size="12" class="mono" fill="#bfe8ea">BF16 peak = 400 TFLOPS</text>
+      <text x="18" y="72" font-size="12" class="mono" fill="#bfe8ea">HBM2e BW = 1600 GB/s</text>
+      <text x="18" y="92" font-size="12" class="mono" fill="#bfe8ea">VRAM = 64 GB</text>
+      <text x="18" y="112" font-size="12" class="mono" fill="#7fe0e6">Comp/BW = 250 FLOP/B</text>
+      <text x="18" y="132" font-size="11" fill="#9ad8dc">Da Vinci v2 · TDP 400W</text>
+    </g>
+
+    <g data-id="model" class="nd" transform="translate(348,56)">
+      <rect class="box" width="320" height="150" rx="12" fill="#1c2b3a" stroke="#58a6ff"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#9cc9ff">Qwen3-8B（模型配置）</text>
+      <text x="18" y="52" font-size="12" class="mono" fill="#cfe0f0">hidden=4096 · int=12288</text>
+      <text x="18" y="72" font-size="12" class="mono" fill="#cfe0f0">L=36 · H=32 · KV头=8(GQA)</text>
+      <text x="18" y="92" font-size="12" class="mono" fill="#cfe0f0">head_dim=128 · 8.2B 参数</text>
+      <text x="18" y="112" font-size="12" class="mono" fill="#9cc9ff">+itemic 24578 token</text>
+      <text x="18" y="132" font-size="11" fill="#8fb0d4">max_position 40960 · bf16</text>
+    </g>
+
+    <g data-id="assume" class="nd" transform="translate(692,56)">
+      <rect class="box" width="320" height="150" rx="12" fill="#241a38" stroke="#bc8cff"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#d6bbff">推理路径（线上推荐）</text>
+      <text x="18" y="52" font-size="12" class="mono" fill="#e4d5f7">enable_thinking = False</text>
+      <text x="18" y="72" font-size="12" class="mono" fill="#e4d5f7">单阶段：恒前缀 beam search</text>
+      <text x="18" y="92" font-size="12" class="mono" fill="#e4d5f7">无 CoT · 无二次 prefill</text>
+      <text x="18" y="112" font-size="12" class="mono" fill="#d6bbff">prompt + &lt;|sid_begin|&gt;</text>
+      <text x="18" y="132" font-size="11" fill="#b39ee0">base_generator.py L105-127</text>
+    </g>
+
+    <g data-id="budget" class="nd" transform="translate(1036,56)">
+      <rect class="box" width="260" height="150" rx="12" fill="#1d3a24" stroke="#3fb950"/>
+      <text x="18" y="30" font-size="13.5" font-weight="700" fill="#a6f3b6">预算口径</text>
+      <text x="18" y="52" font-size="12" class="mono" fill="#d9f4dd">decode = 访存带宽界</text>
+      <text x="18" y="72" font-size="12" class="mono" fill="#d9f4dd">prefill = 算力界</text>
+      <text x="18" y="92" font-size="12" class="mono" fill="#d9f4dd">MFU 取 0.45~0.60</text>
+      <text x="18" y="112" font-size="12" class="mono" fill="#d9f4dd">计算/真机各一档</text>
+      <text x="18" y="132" font-size="11" fill="#8fd49a">CANN / MindIE 真机回退</text>
+    </g>
+
+    <text x="24" y="232" font-size="13.5" font-weight="700" fill="#fff">核心建模公式</text>
+    <g data-id="f-prefill" class="nd" transform="translate(24,248)">
+      <rect class="box" width="410" height="86" rx="10" fill="#123036" stroke="#39c5cf"/>
+      <text x="16" y="24" font-size="12" class="mono" fill="#7fe0e6">T_prefill ≈ 2·N·S / (MFU·F)</text>
+      <text x="16" y="46" font-size="11.5" fill="#bfe8ea">N=8.2G · S=prompt 长度 · F=400T</text>
+      <text x="16" y="66" font-size="11.5" fill="#9ad8dc">算力密集：并行前向生成 KV</text>
+    </g>
+    <g data-id="f-decode" class="nd" transform="translate(450,248)">
+      <rect class="box" width="410" height="86" rx="10" fill="#123036" stroke="#39c5cf"/>
+      <text x="16" y="24" font-size="12" class="mono" fill="#7fe0e6">T_decode/tok ≈ 2·N / BW</text>
+      <text x="16" y="46" font-size="11.5" fill="#bfe8ea">= 16.4GF / 1.6TB/s ≈ 10.3 µs</text>
+      <text x="16" y="66" font-size="11.5" fill="#9ad8dc">访存密集：读权重 + KV</text>
+    </g>
+    <g data-id="f-kv" class="nd" transform="translate(876,248)">
+      <rect class="box" width="420" height="86" rx="10" fill="#1c2b3a" stroke="#58a6ff"/>
+      <text x="16" y="24" font-size="12" class="mono" fill="#9cc9ff">KV = 2·L·KV头·head_dim·S·bytes</text>
+      <text x="16" y="46" font-size="11.5" fill="#cfe0f0">8B：2·36·8·128·S·2 = 147,456·S B</text>
+      <text x="16" y="66" font-size="11.5" fill="#8fb0d4">GQA 8 头 → 每 token 144KB（bf16）</text>
+    </g>
+  </svg>
+  </div>
+
+  <div class="note">
+    <b>规格来源</b>：910B 参数取自 <a href="https://flopper.io/gpu/huawei-ascend-910b" target="_blank" rel="noopener">Flopper.io / CSET</a>（400 TFLOPS BF16、1.6 TB/s、64 GB）；其中 1.6 TB/s 为 910B1/B2 早期样本，主流 B3/B4 常报约 1.6 TB/s 但亦有 1.2 TB/s 档位，本表按保守取 <b>1.2 TB/s</b> 计算真机档。<br>
+    <b>模型来源</b>：Qwen/Qwen3-8B config.json（L=36, GQA 8 KV 头, hidden 4096）。Itemic 词表扩展 3×8192+2，不改变层结构。
+  </div>
+</section>
+
+<!-- ================= 1 吞吐/时延预算表 ================= -->
+<section id="s7">
+  <div class="sec-head"><span class="sec-num">13</span><h2>吞吐 / 时延预算表</h2></div>
+  <p class="sec-desc">
+    三条预算线：业界常见 <b>1.6 TB/s 单卡</b>、保守 <b>1.2 TB/s 单卡</b>、以及 <b>8 卡 TP 扩容</b>。每张表覆盖「单卡在线吞吐」「TTFT」「TPOT」「推荐任务专属指标」。
+  </p>
+
+  <!-- ==== 场景 A：1.6TB/s ==== -->
+  <h4 class="kicker">▍白盒计算 · 场景 A：单卡 910B（1.6 TB/s 名义带宽，MFU=0.55）</h4>
+  <div style="overflow-x:auto"><table class="tbl" id="tblA"></table></div>
+
+  <!-- ==== 场景 B：1.2TB/s 保守 ==== -->
+  <h4 class="kicker">▍保守预算 · 场景 B：单卡 910B（1.2 TB/s 真机近似，MFU=0.50）</h4>
+  <div style="overflow-x:auto"><table class="tbl" id="tblB"></table></div>
+
+  <!-- ==== 场景 C：8 卡 ==== -->
+  <h4 class="kicker">▍扩容预算 · 场景 C：8×910B（TP=8，KV 分片，1.2 TB/s）</h4>
+  <div style="overflow-x:auto"><table class="tbl" id="tblC"></table></div>
+
+  <div class="note">
+    <b>说明</b>：推荐任务输出固定 <b>3 个 itemic token</b>（s_a/s_b/s_c），故「TPOT×3 + TTFT」即单请求完整 latency。
+    <b>单请求预算</b>以单并发（batch=1）为准；<b>在线吞吐</b>假设连续批加入后 batch≥64，decode 吞吐按带宽界给出上限。
+    <b>Beam 放大</b>：beam=B 时 decode FLOPs 与 KV 读按 ×B（无 prefix cache 时），吞吐约 ÷B 分摊；下表单独给出。
+  </div>
+</section>
+
+<!-- ================= 2 显存预算 ================= -->
+<section id="s8">
+  <div class="sec-head"><span class="sec-num">14</span><h2>显存预算（单卡 64 GB）</h2></div>
+  <p class="sec-desc">Qwen3-8B 权重 16.4 GB（bf16），剩余空间由 KV cache 与激活、运行时占用分摊。交互式调节控制「最大并发序列数」。</p>
+
+  <div class="grid2" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div style="overflow-x:auto"><table class="tbl" id="memTbl"></table></div>
+    <div class="calc">
+      <h3>显存 & 并发计算</h3>
+      <div class="row">
+        <div><label><b>max_tokens</b>（KV 上限）</label><input type="range" id="mem_seq" min="2048" max="32768" step="1024" value="10240"><span class="val" id="v_mem_seq">10240</span></div>
+        <div><label><b>精度</b></label><select id="mem_prec"><option value="2" selected>bf16 (2B)</option><option value="1">fp8 KV (1B)</option></select></div>
+        <div><label><b>权重是否 TP=8</b></label><select id="mem_tp"><option value="1" selected>单卡 (×1)</option><option value="8">TP8 (÷8)</option></select></div>
+      </div>
+      <div class="results" id="memOut"></div>
+      <div class="note">每请求 KV = 147,456 B × S（bf16 时索引每 token 144KB）。GQA 8 KV 头是关键——若误按 MHA 32 头会高估 4×。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 3 场景对比 ================= -->
+<section id="s9">
+  <div class="sec-head"><span class="sec-num">15</span><h2>任务场景对比 · 910B 上的负载谱</h2></div>
+  <p class="sec-desc">
+    同一 910B（保守口径 1.2 TB/s · MFU 0.5/0.8 · Qwen3-8B batch=1），三类在线任务的负载画像完全不同：
+    <b>召回推荐 prefill 绑定</b>、<b>Item 理解 decode 主导</b>、<b>推荐解释双重重载</b>。
+  </p>
+
+  <!-- 图A：单请求时延构成（对数轴堆叠条） -->
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 410" role="img" aria-label="latency composition">
+    <text x="24" y="30" font-size="18" font-weight="700" fill="#fff">图 A · 单请求时延构成（对数轴 1ms → 100s）</text>
+    <rect x="640" y="44" width="14" height="14" rx="3" fill="#f0883e"/><text x="660" y="56" font-size="11.5" fill="#ffb387">TTFT（prefill）</text>
+    <rect x="800" y="44" width="14" height="14" rx="3" fill="#bc8cff"/><text x="820" y="56" font-size="11.5" fill="#d6bbff">decode（Σ TPOT × 输出长度）</text>
+    <line x1="980" y1="51" x2="1020" y2="51" stroke="#7ee787" stroke-dasharray="4 3"/><text x="1028" y="56" font-size="11.5" fill="#7ee787">总时延</text>
+
+    <!-- gridlines: 1ms..100s -->
+    <g stroke="#2d333b" stroke-dasharray="3 4">
+      <line x1="380" y1="70" x2="380" y2="356"/><line x1="556" y1="70" x2="556" y2="356"/>
+      <line x1="732" y1="70" x2="732" y2="356"/><line x1="908" y1="70" x2="908" y2="356"/>
+      <line x1="1084" y1="70" x2="1084" y2="356"/><line x1="1260" y1="70" x2="1260" y2="356"/>
+    </g>
+    <g font-size="10.5" fill="#6e7681" text-anchor="middle">
+      <text x="380" y="374">1ms</text><text x="556" y="374">10ms</text><text x="732" y="374">100ms</text>
+      <text x="908" y="374">1s</text><text x="1084" y="374">10s</text><text x="1260" y="374">100s</text>
+    </g>
+
+    <!-- row 1: 召回 -->
+    <g data-id="sc-reco" class="nd">
+      <text x="24" y="102" font-size="13.5" font-weight="700" fill="#ffcfa8">召回推荐</text>
+      <text x="24" y="121" font-size="11" fill="#8b949e">S=10,240 · out=3</text>
+      <text x="24" y="139" font-size="11" fill="#ffb387">prefill 占 94%</text>
+      <rect class="box" x="380" y="90" width="515" height="26" rx="5" fill="#3a2112" stroke="#f0883e"/>
+      <text x="392" y="107" font-size="11.5" class="mono" fill="#ffcfa8">TTFT 840ms</text>
+      <rect class="box" x="380" y="124" width="308" height="26" rx="5" fill="#241a38" stroke="#bc8cff"/>
+      <text x="392" y="141" font-size="11.5" class="mono" fill="#d6bbff">decode 3×18.7ms ≈ 56ms</text>
+      <line x1="900" y1="82" x2="900" y2="152" stroke="#7ee787" stroke-dasharray="4 3"/>
+      <text x="908" y="80" font-size="11" class="mono" fill="#7ee787">总 0.90s</text>
+    </g>
+
+    <!-- row 2: 理解 -->
+    <g data-id="sc-caption" class="nd">
+      <text x="24" y="198" font-size="13.5" font-weight="700" fill="#d6bbff">Item 理解</text>
+      <text x="24" y="217" font-size="11" fill="#8b949e">S≈128 · out≈200</text>
+      <text x="24" y="235" font-size="11" fill="#d6bbff">decode 占 99.7%</text>
+      <rect class="box" x="380" y="186" width="180" height="26" rx="5" fill="#3a2112" stroke="#f0883e"/>
+      <text x="392" y="203" font-size="11.5" class="mono" fill="#ffcfa8">TTFT 10.5ms</text>
+      <rect class="box" x="380" y="220" width="622" height="26" rx="5" fill="#241a38" stroke="#bc8cff"/>
+      <text x="392" y="237" font-size="11.5" class="mono" fill="#d6bbff">decode 200×17.1ms ≈ 3.4s</text>
+      <line x1="1002" y1="178" x2="1002" y2="248" stroke="#7ee787" stroke-dasharray="4 3"/>
+      <text x="1010" y="176" font-size="11" class="mono" fill="#7ee787">总 3.43s</text>
+    </g>
+
+    <!-- row 3: 解释 -->
+    <g data-id="sc-explain" class="nd">
+      <text x="24" y="294" font-size="13.5" font-weight="700" fill="#ffb3a8">推荐解释</text>
+      <text x="24" y="313" font-size="11" fill="#8b949e">S=10,240 · out≈1,200</text>
+      <text x="24" y="331" font-size="11" fill="#ffb3a8">decode 占 96%</text>
+      <rect class="box" x="380" y="282" width="515" height="26" rx="5" fill="#3a2112" stroke="#f0883e"/>
+      <text x="392" y="299" font-size="11.5" class="mono" fill="#ffcfa8">TTFT 840ms</text>
+      <rect class="box" x="380" y="316" width="766" height="26" rx="5" fill="#241a38" stroke="#bc8cff"/>
+      <text x="392" y="333" font-size="11.5" class="mono" fill="#e9ddff">decode 1,200×18.7ms ≈ 22.4s</text>
+      <line x1="1148" y1="274" x2="1148" y2="344" stroke="#7ee787" stroke-dasharray="4 3"/>
+      <text x="1156" y="272" font-size="11" class="mono" fill="#7ee787">总 23.2s</text>
+    </g>
+    <line x1="380" y1="356" x2="1270" y2="356" stroke="#3a4350"/>
+  </svg>
+  </div>
+
+  <!-- 图B：负载谱象限 -->
+  <div class="svg-wrap">
+  <svg viewBox="0 0 1320 560" role="img" aria-label="load spectrum quadrant">
+    <text x="24" y="30" font-size="18" font-weight="700" fill="#fff">图 B · 负载谱：prompt 长度 × 输出长度（对数-对数）</text>
+
+    <!-- decode-bound shaded region (above boundary line) -->
+    <polygon points="200,80 780,80 780,213 310,420 200,420" fill="rgba(188,140,255,.07)"/>
+    <!-- plot frame -->
+    <line x1="200" y1="80" x2="200" y2="420" stroke="#3a4350" stroke-width="1.4"/>
+    <line x1="200" y1="420" x2="780" y2="420" stroke="#3a4350" stroke-width="1.4"/>
+    <line x1="780" y1="80" x2="780" y2="420" stroke="#2d333b" stroke-dasharray="3 4"/>
+    <line x1="200" y1="80" x2="780" y2="80" stroke="#2d333b" stroke-dasharray="3 4"/>
+
+    <!-- S gridlines -->
+    <g stroke="#2d333b" stroke-dasharray="3 4">
+      <line x1="329" y1="80" x2="329" y2="420"/><line x1="458" y1="80" x2="458" y2="420"/>
+      <line x1="586" y1="80" x2="586" y2="420"/><line x1="715" y1="80" x2="715" y2="420"/>
+    </g>
+    <g font-size="10.5" fill="#6e7681" text-anchor="middle">
+      <text x="200" y="438">64</text><text x="329" y="438">256</text><text x="458" y="438">1K</text>
+      <text x="586" y="438">4K</text><text x="715" y="438">16K</text><text x="780" y="438">32K</text>
+    </g>
+    <text x="490" y="458" text-anchor="middle" font-size="11.5" fill="#8b949e">prompt 长度 S（token）→ prefill 量</text>
+
+    <!-- L gridlines -->
+    <g stroke="#2d333b" stroke-dasharray="3 4">
+      <line x1="200" y1="363" x2="780" y2="363"/><line x1="200" y1="307" x2="780" y2="307"/>
+      <line x1="200" y1="250" x2="780" y2="250"/><line x1="200" y1="193" x2="780" y2="193"/>
+      <line x1="200" y1="137" x2="780" y2="137"/>
+    </g>
+    <g font-size="10.5" fill="#6e7681" text-anchor="end">
+      <text x="194" y="424">1</text><text x="194" y="367">4</text><text x="194" y="311">16</text>
+      <text x="194" y="254">64</text><text x="194" y="197">256</text><text x="194" y="141">1K</text><text x="194" y="84">4K</text>
+    </g>
+    <text x="60" y="250" font-size="11.5" fill="#8b949e" transform="rotate(-90 60 250)" text-anchor="middle">输出长度（token）→ decode 量</text>
+
+    <!-- boundary line: out = S/208 -->
+    <line x1="310" y1="420" x2="780" y2="213" stroke="#d29922" stroke-width="1.6" stroke-dasharray="7 4"/>
+    <text x="545" y="316" font-size="11" class="mono" fill="#f0c674" transform="rotate(-23.8 545 316)" text-anchor="middle">分界线 out = S/208（上方 decode 界 · 下方 prefill 界）</text>
+    <g data-id="sc-bound" class="nd">
+      <rect x="850" y="380" width="440" height="66" rx="8" fill="#2e2616" stroke="#d29922"/>
+      <text x="862" y="402" font-size="11.5" font-weight="700" fill="#f4dd9a">分界推导</text>
+      <text x="862" y="420" font-size="10.5" class="mono" fill="#f0c674">TTFT &gt; decode ⇔ 2NS/(mfu_p·F) &gt; L·2N/BW_eff</text>
+      <text x="862" y="436" font-size="10.5" class="mono" fill="#f0c674">⇔ L &lt; S·BW_eff/(mfu_p·F) = S/208（1.2TB/s · 0.5/0.8）</text>
+    </g>
+
+    <!-- task points -->
+    <g data-id="sc-reco" class="nd">
+      <circle cx="672" cy="375" r="9" fill="#f0883e" stroke="#ffd9b8" stroke-width="2"/>
+      <rect class="box" x="470" y="344" width="188" height="46" rx="7" fill="#24140c" stroke="#f0883e"/>
+      <text x="482" y="362" font-size="11.5" font-weight="700" fill="#ffcfa8">召回推荐 (10K, 3)</text>
+      <text x="482" y="379" font-size="10.5" class="mono" fill="#ffb387">TTFT 840ms ≫ decode 56ms</text>
+    </g>
+    <g data-id="sc-caption" class="nd">
+      <circle cx="264" cy="203" r="9" fill="#bc8cff" stroke="#e6d6ff" stroke-width="2"/>
+      <rect class="box" x="286" y="176" width="226" height="46" rx="7" fill="#1d1730" stroke="#bc8cff"/>
+      <text x="298" y="194" font-size="11.5" font-weight="700" fill="#d6bbff">Item 理解 (128, ≈200)</text>
+      <text x="298" y="211" font-size="10.5" class="mono" fill="#d6bbff">decode 3.4s ≫ TTFT 10.5ms</text>
+    </g>
+    <g data-id="sc-explain" class="nd">
+      <circle cx="672" cy="130" r="9" fill="#f85149" stroke="#ffc9c4" stroke-width="2"/>
+      <rect class="box" x="408" y="100" width="250" height="46" rx="7" fill="#33101a" stroke="#f85149"/>
+      <text x="420" y="118" font-size="11.5" font-weight="700" fill="#ffb3a8">推荐解释 (10K, ≈1,200)</text>
+      <text x="420" y="135" font-size="10.5" class="mono" fill="#ffb3a8">decode 22.4s + TTFT 840ms</text>
+      <line x1="658" y1="123" x2="663" y2="128" stroke="#f85149" stroke-width="1.5"/>
+    </g>
+
+    <!-- takeaways -->
+    <g data-id="sc-note" class="nd">
+      <rect class="box" x="850" y="80" width="440" height="92" rx="10" fill="#24140c" stroke="#f0883e"/>
+      <text x="864" y="102" font-size="12" font-weight="700" fill="#ffcfa8">召回 · prefill 绑定</text>
+      <text x="864" y="121" font-size="11" fill="#f3d9c3">QPS ≈ 1.2 req/s/卡（prefill 算力界，组批不加成）</text>
+      <text x="864" y="138" font-size="11" fill="#f3d9c3">提 QPS 只能：降 S / 加卡 / 提 MFU</text>
+      <text x="864" y="157" font-size="11" fill="#ffb387">恒前缀 beam + prefix cache 保 decode 不拖尾</text>
+    </g>
+    <g data-id="sc-note2" class="nd">
+      <rect class="box" x="850" y="184" width="440" height="92" rx="10" fill="#1d1730" stroke="#bc8cff"/>
+      <text x="864" y="206" font-size="12" font-weight="700" fill="#d6bbff">Item 理解 · decode 主导</text>
+      <text x="864" y="225" font-size="11" fill="#e4d5f7">单流 3.4s，但 KV 极小（S=128 → 18MB/序列）</text>
+      <text x="864" y="242" font-size="11" fill="#e4d5f7">在线吞吐上限 ~52K tok/s → 适合大 batch 吞吐型</text>
+      <text x="864" y="261" font-size="11" fill="#d6bbff">评测 batch=250 即此逻辑</text>
+    </g>
+    <g data-id="sc-note3" class="nd">
+      <rect class="box" x="850" y="288" width="440" height="80" rx="10" fill="#33101a" stroke="#f85149"/>
+      <text x="864" y="310" font-size="12" font-weight="700" fill="#ffb3a8">推荐解释 · 双重重载</text>
+      <text x="864" y="329" font-size="11" fill="#f3d0d0">单流 23.2s；S=10K 时组批会让 TPOT 随 KV 读恶化</text>
+      <text x="864" y="348" font-size="11" fill="#ffb3a8">限流 + CoT 长度预算 + 早停；对应评测 batch=5</text>
+    </g>
+  </svg>
+  </div>
+
+  <div class="note">
+    口径：batch=1 单流、Qwen3-8B（N=8.2×10⁹）、910B 保守 1.2 TB/s、MFU prefill 0.5 / decode 0.8、KV=144 KB/token（GQA-8 · bf16）。
+    图 A 总时延含 KV 读；输出长度中 理解 ≈200、解释 ≈1,200 为典型假设值（CoT ≤1,000 + 解释 ≈200）。
+  </div>
+</section>
+
+<!-- ================= 4 计算器 ================= -->
+<section id="s4">
+  <div class="sec-head"><span class="sec-num">16</span><h2>负载与预算计算器 · KV/FLOPs + 910B 时延</h2></div>
+  <p class="sec-desc">调整参数实时估算单序列 KV cache 显存、prefill 与每 token decode 的 FLOPs，理解负载数量级（8B 骨干默认）。</p>
+
+  <div class="calc">
+    <div class="row">
+      <div>
+        <label><b>L</b> 层数</label>
+        <input type="number" id="in_L" value="36" step="1">
+      </div>
+      <div>
+        <label><b>H_kv</b> KV 头数（GQA）</label>
+        <input type="number" id="in_H" value="8" step="1">
+      </div>
+      <div>
+        <label><b>D_head</b> 每头维度</label>
+        <input type="number" id="in_D" value="128" step="8">
+      </div>
+      <div>
+        <label><b>N</b> 参数量（亿）</label>
+        <input type="number" id="in_N" value="8" step="0.1">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label><b>S</b> 序列总长（prompt+生成）</label>
+        <input type="range" id="in_S" min="1024" max="32768" step="1024" value="10240">
+        <span class="val" id="v_S">10240</span>
+      </div>
+      <div>
+        <label><b>L_cot</b> 思维 CoT 长度</label>
+        <input type="range" id="in_cot" min="0" max="2048" step="64" value="512">
+        <span class="val" id="v_cot">512</span>
+      </div>
+      <div>
+        <label><b>beam</b> 束搜索宽度</label>
+        <input type="range" id="in_beam" min="1" max="128" step="1" value="32">
+        <span class="val" id="v_beam">32</span>
+      </div>
+      <div>
+        <label><b>bytes</b> KV 每元素字节</label>
+        <select id="in_bytes" style="width:100%;background:#0b0e14;border:1px solid var(--border2);border-radius:7px;color:#e6edf3;padding:7px 10px;font-family:var(--mono)">
+          <option value="2" selected>2 (bf16)</option>
+          <option value="4">4 (fp32)</option>
+          <option value="1">1 (fp8)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="results" id="calcOut"></div>
+    <div class="note">
+      说明：FLOPs 采用近似 <code>prefill ≈ 2·N·S</code>、<code>每 decode token ≈ 2·N</code>（不含 KV 读带来的访存时间）。
+      KV cache = 2 × L × H × D_head × S × bytes。图 ①：<code>onerec_ray_trainer.py</code> 与 <code>onerec_vllm_rollout.py</code> 的真实默认巡逻参数。
+    </div>
+  </div>
+
+
+  <h4 class="kicker">▍910B 时延计算器 · TTFT / TPOT / 吞吐（与预算表同口径）</h4>
+
+  <div class="calc">
+    <div class="row">
+      <div><label><b>模型</b></label>
+        <select id="ci_model">
+          <option value="8" selected>Qwen3-8B (8.2B, GQA 8KV)</option>
+          <option value="1.7">Qwen3-1.7B (1.7B, GQA 8KV)</option>
+        </select></div>
+      <div><label><b>S</b> prompt 长度</label><input type="range" id="ci_S" min="1024" max="32768" step="1024" value="10240"><span class="val" id="v_ci_S">10240</span></div>
+      <div><label><b>B</b> beam 宽度</label><input type="range" id="ci_beam" min="1" max="128" step="1" value="32"><span class="val" id="v_ci_beam">32</span></div>
+      <div><label><b>带宽</b> BW</label>
+        <select id="ci_bw"><option value="1200">1.2 TB/s（保守）</option><option value="1600" selected>1.6 TB/s（名义）</option></select></div>
+    </div>
+    <div class="row">
+      <div><label><b>MFU_prefill</b></label><input type="range" id="ci_mfup" min="30" max="90" step="5" value="55"><span class="val" id="v_ci_mfup">55%</span></div>
+      <div><label><b>MFU_decode</b></label><input type="range" id="ci_mfud" min="60" max="95" step="5" value="85"><span class="val" id="v_ci_mfud">85%</span></div>
+      <div><label><b>输出 tokens</b></label><input type="range" id="ci_out" min="3" max="1024" step="1" value="3"><span class="val" id="v_ci_out">3</span></div>
+      <div><label><b>并发 batch</b></label><input type="range" id="ci_batch" min="1" max="256" step="1" value="1"><span class="val" id="v_ci_batch">1</span></div>
+    </div>
+    <div class="results" id="ciOut"></div>
+    <div class="note">
+      公式：TTFT = 2·N·S/(MFU_prefill·F)；TPOT/tok = 2·N/(MFU_decode·BW)；在线吞吐（decode 界）= BW/(2·N × 无 KV 读修正)。
+      Beam=B 时 decode 若有共享前缀（prefix cache），KV 读放大 1×、算力 ×B；无缓存则吞吐 ÷B。
+    </div>
+  </div>
+</section>
+
+<!-- ================= 5 术语表 ================= -->
+<section id="s10">
+  <div class="sec-head"><span class="sec-num">17</span><h2>缩写与术语说明</h2></div>
+  <p class="sec-desc">本页出现的硬件、指标、模型与系统术语速查；数值口径均以本页假设为准。</p>
+  <div style="overflow-x:auto"><table class="tbl">
+    <thead><tr><th style="width:150px">术语 / 缩写</th><th style="width:270px">全称</th><th>在本页语境中的含义</th></tr></thead>
+    <tbody>
+      <tr><th colspan="3" style="color:var(--teal2)">① 硬件与编译栈</th></tr>
+      <tr><td class="mono">910B</td><td>Ascend 910B</td><td>华为昇腾 AI 处理器（Da Vinci v2 架构）；本页取 400 TFLOPS BF16 / 1.6 TB/s / 64 GB / TDP 400W</td></tr>
+      <tr><td class="mono">HBM2e</td><td>High Bandwidth Memory 2e</td><td>第二增强版高带宽显存；910B 显存类型，名义 1.6 TB/s（真机预算保守取 1.2 TB/s）</td></tr>
+      <tr><td class="mono">CANN</td><td>Compute Architecture for Neural Networks</td><td>华为异构计算架构（昇腾版 CUDA）：算子库、图引擎与运行时；真机数字以其实测为准</td></tr>
+      <tr><td class="mono">MindIE</td><td>Mind Inference Engine</td><td>昇腾推理加速引擎，对应 vLLM 在 GPU 生态中的角色</td></tr>
+      <tr><td class="mono">TP / TP8</td><td>Tensor Parallelism（张量并行）</td><td>把权重与 KV cache 按注意力头切分到多卡；TP8 = 8 卡分片</td></tr>
+      <tr><td class="mono">Da Vinci v2</td><td>达芬奇架构第二代</td><td>910B 的微架构（Cube/Vector/Scalar 单元）</td></tr>
+
+      <tr><th colspan="3" style="color:var(--purple2)">② 时延与吞吐指标</th></tr>
+      <tr><td class="mono">TTFT</td><td>Time To First Token</td><td>首 token 时延，≈ prefill 时间；召回任务的时延主体</td></tr>
+      <tr><td class="mono">TPOT</td><td>Time Per Output Token</td><td>每输出 token 时延 ≈ 单步 decode 时间；长输出任务（解释）的时延主体</td></tr>
+      <tr><td class="mono">MFU</td><td>Model FLOPs Utilization</td><td>实际算力利用率 = 实算 FLOPs / 峰值 FLOPs；本页 prefill 取 0.45~0.55、decode 带宽利用率取 0.8</td></tr>
+      <tr><td class="mono">FLOPs / TFLOPS</td><td>Floating Point Operations / per Second</td><td>运算次数 / 每秒峰值；本页 prefill ≈ 2·N·S</td></tr>
+      <tr><td class="mono">QPS</td><td>Queries Per Second</td><td>每卡每秒可完成的请求数；召回上限 ≈1.2（prefill 算力界）</td></tr>
+      <tr><td class="mono">Roofline</td><td>屋顶线模型</td><td>用「算术强度 = FLOPs/Bytes」判断负载是算力界还是带宽界的框架</td></tr>
+      <tr><td class="mono">OOM</td><td>Out Of Memory</td><td>显存不足；KV cache 超 64GB 上限时的失败态</td></tr>
+
+      <tr><th colspan="3" style="color:var(--blue2)">③ 模型与注意力</th></tr>
+      <tr><td class="mono">GQA</td><td>Grouped-Query Attention</td><td>分组查询注意力：Qwen3-8B 用 8 个 KV 头共享 32 个 Q 头，KV cache 相比 MHA 缩小 4×</td></tr>
+      <tr><td class="mono">MHA</td><td>Multi-Head Attention</td><td>全头注意力（对照项）；若误按 32 KV 头估算会把 KV 高估 4×</td></tr>
+      <tr><td class="mono">KV cache</td><td>Key-Value 缓存</td><td>注意力历史缓存；8B/bf16/GQA-8 ≈ 144 KB/token，S=10K 时 1.51 GB/序列</td></tr>
+      <tr><td class="mono">prefill</td><td>预填充</td><td>一次性并行前向吃下整个 prompt，生成 KV cache；算力界（compute-bound）</td></tr>
+      <tr><td class="mono">decode</td><td>解码</td><td>逐 token 自回归生成；访存界（memory-bound，每步读全量权重）</td></tr>
+      <tr><td class="mono">bf16 / fp8</td><td>16 / 8 位浮点</td><td>权重与 KV 的数值格式；fp8 KV 可再省一半显存</td></tr>
+      <tr><td class="mono">N</td><td>参数量</td><td>本页 Qwen3-8B 取 8.2×10⁹（含词嵌入与输出投影）</td></tr>
+
+      <tr><th colspan="3" style="color:var(--amber2)">④ 推荐范式与生成</th></tr>
+      <tr><td class="mono">itemic token</td><td>物品词元</td><td>物品经 RQ-Kmeans 量化出的三层码（s_a/s_b/s_c），推荐输出固定 3 个 token</td></tr>
+      <tr><td class="mono">SID</td><td>Semantic ID（语义 ID）</td><td>模型生成的 itemic 三元组序列，如 &lt;|sid_begin|&gt;&lt;s_a&gt;&lt;s_b&gt;&lt;s_c&gt;</td></tr>
+      <tr><td class="mono">PID</td><td>Photo/Item ID</td><td>物品真实 ID；评测时把 SID 映射回 PID 算召回</td></tr>
+      <tr><td class="mono">RQ-Kmeans</td><td>Residual K-Means</td><td>残差 K 均值量化：逐层对残差聚类，训练 3×8192 码本</td></tr>
+      <tr><td class="mono">beam search</td><td>束搜索</td><td>每步保留 B 条最优序列；beam=32 时 decode 算力 ×32（prefix cache 下显存不放大）</td></tr>
+      <tr><td class="mono">CoT</td><td>Chain-of-Thought（思维链）</td><td>先生成推理再给答案；enable_thinking=True 时推荐任务才有 CoT 与二次 prefill</td></tr>
+      <tr><td class="mono">enable_thinking</td><td>思维开关</td><td>线上推荐默认 False → 单阶段「恒前缀 + beam search」，无 CoT</td></tr>
+      <tr><td class="mono">&lt;|sid_begin|&gt;</td><td>SID 起始符</td><td>恒前缀：拼在 prompt 后强制模型进入「生成 SID」状态</td></tr>
+
+      <tr><th colspan="3" style="color:var(--green2)">⑤ 系统优化</th></tr>
+      <tr><td class="mono">prefix cache</td><td>前缀缓存（Radix/PagedAttention）</td><td>复用相同前缀的 KV：同一 prompt 的 32 条 beam 共享前缀，decode 不重算</td></tr>
+      <tr><td class="mono">continuous batching</td><td>连续批处理</td><td>请求级动态组批；短输出任务靠它吃满带宽</td></tr>
+      <tr><td class="mono">chunked prefill</td><td>分块预填充</td><td>长 prompt 切片与 decode 混跑；interactive/rec_reason 显式关闭</td></tr>
+      <tr><td class="mono">activation offload</td><td>激活卸载</td><td>训练期把激活换出到主存；RL rollout 显存腾挪手段</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+</main>
+
+<footer>
+  <div>来源：<a href="https://arxiv.org/abs/2512.24762" target="_blank" rel="noopener">arXiv:2512.24762</a>
+  · 代码：<a href="https://github.com/Kuaishou-OneRec/OpenOneRec" target="_blank" rel="noopener">Kuaishou-OneRec/OpenOneRec</a>
+  · 推理取证：<code>verl_rl/recipe/onerec/</code> · <code>benchmarks/</code></div>
+  <div style="margin-top:6px">910B 规格来源：<a href="https://flopper.io/gpu/huawei-ascend-910b" target="_blank" rel="noopener">Flopper.io（CSET 汇总，非华为官方芯片级规格）</a> · 模型配置 <a href="https://huggingface.co/Qwen/Qwen3-8B" target="_blank" rel="noopener">Qwen3-8B config.json</a>；910B 预算为白盒估算（数量级口径），真机以 CANN / MindIE 实测为准。</div>
+  <div style="margin-top:6px">KV/FLOPs 为数量级估算，非精确值；权重默认按 Qwen3-8B（L=36, H_kv=8 GQA, D_head=128）近似，可改参数；KV 计算器的 H 请填 KV 头数（GQA 8），按 MHA 32 会高估 4×。</div>
+</footer>
+
+<aside id="drawer">
+  <button class="close" id="dclose" aria-label="关闭">✕</button>
+  <div id="dcontent"></div>
+</aside>
+<div id="tip"></div>
+
+<script>
+const DB = {
+  'ld-prompt':{stage:'负载全景',c:'#39c5cf',title:'上下文序列化',sum:'把用户交互历史压缩为 itemic token 序列，叠加系统/指令 prompt。',
+    items:['<b>历史长度</b>：单用户平均 458 条短视频交互 → 超长上下文。','<b>序列化</b>：Qwen3 chat template + add_generation_prompt。','<b>上限</b>：训练 max_prompt 10240，预训练上下文 32K。'],ref:'verl_rl/recipe/onerec/onerec_recipe.py · apply_chat_template'},
+  'ld-tokenize':{stage:'负载全景',c:'#39c5cf',title:'Tokenize 与填充',sum:'文本与 itemic 混合编码，left padding 对齐。',
+    items:['<b>词表</b>：V_text ∪ V_item（3×8192+2）。','<b>padding</b>：left_pad=True，position_ids 由 mask 计算。','<b>截断</b>：truncation=error（RL），超长拒绝。'],ref:'onerec_recipe.py · verl_F.postprocess_data'},
+  'ld-prefill':{stage:'负载全景',c:'#bc8cff',title:'Prefill 阶段',sum:'一次性并行前向，生成 S 长度 KV cache，算力密集。',
+    items:['<b>FLOPs</b>：≈6·N·S（MHA/MLP 各 2N，共 ~6N 系数）。','<b>瓶颈</b>：矩阵乘算力 + 权重/激活带宽。','<b>MFU</b>：仓库有 mfu_stats 统计钩子监控。'],ref:'benchmarks/benchmark/base_generator.py · mfu_stats'},
+  'ld-decode':{stage:'负载全景',c:'#bc8cff',title:'Decode 阶段',sum:'逐 token 自回归，访存密集（IO-bound）。',
+    items:['<b>每步</b>：读全部权重（2N 参数）+ KV。','<b>瓶颈</b>：显存带宽而非算力。','<b>两阶段</b>：CoT（≤1024）+ itemic（3 token）两次解码。'],ref:'onerec_vllm_rollout.py · _two_stage_generation'},
+  'ld-out':{stage:'负载全景',c:'#39c5cf',title:'候选输出',sum:'itemic 3-token 解码后映射回物品。',
+    items:['<b>输出</b>：&lt;s_a&gt;&lt;s_b&gt;&lt;s_c&gt; 3 个 token。','<b>映射</b>：SID → PID（most_popular 下采样）。','<b>评测</b>：recall@32 / pass@k。'],ref:'benchmarks/.../recommendation/evaluator.py'},
+  'ld-stage':{stage:'负载全景',c:'#f0883e',title:'两阶段生成（放大器）',sum:'Stage1 采样 CoT，Stage2 把 CoT 拼回再 beam search。',
+    items:['<b>二次 prefill</b>：Stage2 需对 (prompt+CoT) 重新 prefill。','<b>输出放大</b>：beam 展开 ×32。','<b>代价</b>：总 prefill ≈ 2S + L_cot。'],ref:'onerec_vllm_rollout.py · _two_stage_generation'},
+  'ld-kv':{stage:'负载全景',c:'#58a6ff',title:'KV cache 显存',sum:'长序列下 KV cache 是主要显存消耗。',
+    items:['<b>公式</b>：KV = 2×L×H_kv×D_head×S×bytes（H_kv=KV 头数）。','<b>量级</b>：8B/32K/bf16 ≈ 4.8GB/序列（GQA）；10K ≈ 1.5GB。','<b>策略</b>：gpu_mem_util 0.8~0.9 控制占用。'],ref:'benchmarks/eval_script.sh · gpu_memory_utilization'},
+  'ld-speed':{stage:'负载全景',c:'#3fb950',title:'优化降载点',sum:'前缀缓存、连续批处理、TP 切分、显存卸载。',
+    items:['<b>prefix caching</b>：共享 CoT KV。','<b>continuous batching</b>：短输出任务吞吐。','<b>TP</b>：切分 KV cache。'],ref:'vllm_rollout · eval_script.sh'},
+  't-reco':{stage:'任务特征',c:'#f0883e',title:'推荐四任务',sum:'短输出(3 token)+超长输入+128 序列，prefill 与候选放大主导。',
+    items:['<b>配置</b>：num_return_sequences=128, max_new_tokens=3。','<b>脚本覆盖</b>：beam=32, num_return=32, thinking=1。','<b>batch</b>：1875（单 worker）。'],ref:'recommendation/config.py · eval_script.sh'},
+  't-interactive':{stage:'任务特征',c:'#f0883e',title:'交互推荐',sum:'长 prompt 任务，显式关闭 chunked_prefill/prefix_caching。',
+    items:['<b>batch</b>：250。','<b>优化</b>：DISABLE_OPTIMIZATIONS_FOR_TASKS 命中。','<b>原因</b>：长 prompt 下优化可能触发问题。'],ref:'base_generator.py · DISABLE_OPTIMIZATIONS_FOR_TASKS'},
+  't-labelpred':{stage:'任务特征',c:'#39c5cf',title:'标签预测',sum:'不做生成，抽取目标 token 的 logprob，负载类型特殊。',
+    items:['<b>batch</b>：3200。','<b>max_logprobs</b>：10000。','<b>负载</b>：单次前向算 logprob，无 decode。'],ref:'eval_script.sh · label_pred'},
+  't-understand':{stage:'任务特征',c:'#bc8cff',title:'Item Understanding',sum:'SID→caption，长输出 decode 主导。',
+    items:['<b>batch</b>：250。','<b>输出</b>：自然语言描述，decode 密集。'],ref:'eval_script.sh · item_understand'},
+  't-reason':{stage:'任务特征',c:'#f85149',title:'推荐解释（最重）',sum:'长思维+长解释输出，关闭优化，单 worker batch 仅 5。',
+    items:['<b>batch</b>：5（最保守）。','<b>gpu_mem</b>：0.9。','<b>优化</b>：关闭（rec_reason ∈ DISABLE 列表）。'],ref:'eval_script.sh · rec_reason'},
+  'ts-s1':{stage:'两阶段',c:'#f0883e',title:'Stage1 思维采样',sum:'温度采样直到  response，最长 1024 token。',
+    items:['<b>采样</b>：temperature/top_p/top_k 采样。','<b>停止</b>：stop=[" response"]。','<b>n=1</b>：每 prompt 一条 CoT。'],ref:'onerec_vllm_rollout.py · cot_sampling_params'},
+  'ts-concat':{stage:'两阶段',c:'#58a6ff',title:'拼接二次 prefill 前置',sum:'原 prompt + CoT + sid_begin 前缀，OOV 过滤。',
+    items:['<b>前缀</b>：tokenizer.encode("\\n&lt;|sid_begin|&gt;")。','<b>OOV</b>：tid &lt; vocab_size 过滤。','<b>结果</b>：Stage2 需对更长序列重新 prefill。'],ref:'onerec_vllm_rollout.py · _two_stage_generation 中段'},
+  'ts-s2':{stage:'两阶段',c:'#f0883e',title:'Stage2 束搜索',sum:'beam_width=32 生成 itemic，返回全部 beam。',
+    items:['<b>参数</b>：BeamSearchParams(beam=32, max_tokens=16)。','<b>输出</b>：batch × beam 展开。','<b>训练</b>：GRPO 共享 UID 分组。'],ref:'onerec_vllm_rollout.py · beam_search'},
+  'ts-amp':{stage:'两阶段',c:'#f0883e',title:'负载放大定量',sum:'两阶段的 prefill 与 decode 代价叠加。',
+    items:['<b>总 prefill</b> ≈ 2S + L_cot。','<b>总 decode</b> ≈ L_cot + 3×beam。'],ref:'本文推导 · 基于 onerec_vllm_rollout.py'},
+  'ts-pc':{stage:'优化',c:'#39c5cf',title:'Prefix Caching',sum:'共享 (prompt+CoT) 的 KV，消除 Stage2 重复 prefill。',
+    items:['<b>原理</b>：同一 prompt 的多个 beam 共享前缀。','<b>收益</b>：B1/B3 降载。'],ref:'vLLM automatic prefix caching'},
+  'ts-cb':{stage:'优化',c:'#39c5cf',title:'Continuous Batching',sum:'prefill/decode 混合调度，提升短输出吞吐。',
+    items:['<b>原理</b>：粒度级调度。','<b>注意</b>：interactive/rec_reason 关闭。'],ref:'base_generator.py · _should_enable_optimizations'},
+  'bn-flops':{stage:'瓶颈',c:'#f85149',title:'算力瓶颈',sum:'10K prompt 一次性前向。',
+    items:['<b>FLOPs</b> ∝ 6·N·S。','<b>放大</b>：两阶段二次 prefill。'],ref:'推导'},
+  'bn-kv':{stage:'瓶颈',c:'#58a6ff',title:'显存瓶颈',sum:'KV cache 长序列代价。',
+    items:['<b>KV</b> ∝ L×H_kv×D×S（GQA 8 头）。','<b>窗口</b> 32K。'],ref:'推导'},
+  'bn-beam':{stage:'瓶颈',c:'#f0883e',title:'候选放大',sum:'beam=32 输出展开。',
+    items:['<b>输出</b> ×32。','<b>评测覆盖</b> beam 32。'],ref:'config/eval_script'},
+  'bn-sched':{stage:'瓶颈',c:'#3fb950',title:'编排调度',sum:'Ray + FSDP2 分片。',
+    items:['<b>worker</b> Ray 组。','<b>TP</b> 同节点约束。'],ref:'base_generator RayMixin'},
+  'opt1':{stage:'优化',c:'#39c5cf',title:'prefix caching',sum:'消除重复 prefill，对应 B1/B3。',items:['共享 KV · automatic_prefix_caching'],ref:'vLLM'},
+  'opt2':{stage:'优化',c:'#39c5cf',title:'continuous batching',sum:'prefill/decode 混跑。',items:['enable_chunked_prefill'],ref:'rollout config'},
+  'opt3':{stage:'优化',c:'#39c5cf',title:'KV 分片 / TP',sum:'切分 KV cache。',items:['tensor_model_parallel_size'],ref:'gpu_utils/rollout'},
+  'opt4':{stage:'优化',c:'#39c5cf',title:'显存压缩',sum:'activation offload + remove padding。',items:['use_remove_padding · enable_activation_offload'],ref:'run_grpo.sh'},
+  'opt5':{stage:'优化',c:'#3fb950',title:'文本增强 itemic',sum:'迁移推理降载。',items:['[itemic]+[keywords] 碰撞率 0.47%'],ref:'论文 §6'},
+  'opt6':{stage:'优化',c:'#3fb950',title:'长上下文取舍',sum:'稳定性换吞吐。',items:['interactive/rec_reason 关闭优化'],ref:'base_generator.py'},
+  'ts-cache':{stage:'两阶段',c:'#58a6ff',title:'两项关键降载优化',sum:'prefix caching 与 continuous batching 能显著降低两阶段负载。',
+    items:['<b>Prefix caching</b>：候选 beam 共享 (prompt+CoT) KV。','<b>Continuous batching</b>：prefill/decode 混跑。','<b>注意</b>：长 prompt 任务显式关闭。'],ref:'base_generator.py · disable/optimize 逻辑'},
+  'dep-ctrl':{stage:'部署架构',c:'#39c5cf',title:'Ray 单控制器',sum:'单点 TaskRunner 驱动整个 PPO 训练循环。',
+    items:['<b>入口</b>：main_onerec_ppo.py · OneRecTaskRunner.remote()。','<b>资源池</b>：resource_pool_spec={pool:[N_GPU]×N_NODE}。','<b>init_workers()</b> 统一拉起 colocated Worker。'],ref:'main_onerec_ppo.py L185-242 · onerec_ray_trainer.py ResourcePoolManager'},
+  'dep-roles':{stage:'部署架构',c:'#bc8cff',title:'Colocated ActorRolloutRef',sum:'训练/Rollout/参考策略共驻同一组 GPU，FSDP2 分片。',
+    items:['<b>Actor</b>：FSDP2 权重分片 + 梯度检查点 + 激活卸载。','<b>Rollout</b>：每卡内嵌 vLLM 引擎，TP=1。','<b>RefPolicy</b>：use_kl_loss + low_var_kl（无需独立 critic）。'],ref:'run_grpo.sh · actor_rollout_ref.ref.strategy=fsdp2 · critic.enable=False'},
+  'dep-rollout':{stage:'部署架构',c:'#f0883e',title:'Rollout 引擎（vLLM）',sum:'每 GPU 一个 vLLM 引擎做 two_stage 生成，TP=1 数据并行。',
+    items:['<b>backend</b>=vllm · rollout.name=two_stage。','<b>TP=1</b>：单卡整份权重，跨卡数据并行 rollout。','<b>限流</b>：gpu_mem_util 0.8 · max_num_seqs 2048。'],ref:'run_grpo.sh · ROLLOUT_TP_SIZE=1 · actor_rollout_ref.rollout.*'},
+  'dep-critic':{stage:'部署架构',c:'#8b949e',title:'Critic / RM（关闭）',sum:'GRPO 无价值网络，奖励在 CPU 侧计算。',
+    items:['<b>critic.enable</b>=False。','<b>reward_model.enable</b> 默认 False。','<b>奖励</b>：onerec_recipe.compute_score（CPU/custom）。'],ref:'run_grpo.sh · main_onerec_ppo.py L195-205'},
+  'dep-gpu':{stage:'部署架构',c:'#58a6ff',title:'GPU 共驻布局',sum:'每卡同时承载 FSDP2 权重分片 + vLLM rollout 引擎。',
+    items:['<b>共驻</b>：训练权重分片与推理引擎同卡。','<b>规模</b>：N_GPUS×N_NODES（默认 8×1）。','<b>显存</b>：由 gpu_mem_util 切给 rollout。'],ref:'run_grpo.sh · onerec_ray_trainer.py create_resource_pool'},
+  'dep-entry':{stage:'部署架构',c:'#39c5cf',title:'评测任务分派',sum:'evaluate.py 按 8 个 RecIF-Bench 任务下发不同负载参数。',
+    items:['<b>batch</b>：5(rec_reason)~3200(label_pred)。','<b>beam</b>：32 / 128 序列按任务覆盖。','<b>gpu_mem</b>：0.8~0.9。'],ref:'benchmarks/eval_script.sh'},
+  'dep-det':{stage:'部署架构',c:'#f0883e',title:'GPU 发现与分组',sum:'扫描 Ray 存活节点 GPU，按 TP 分组成 worker。',
+    items:['<b>发现</b>：ray.nodes() → 全局 GPU 列表。','<b>分组</b>：len(GPU)%TP==0 校验。','<b>约束</b>：同节点 TP（跨节点默认关闭）。'],ref:'base_generator.py _determine_gpu_ids_from_cluster · _group_gpus_for_workers'},
+  'dep-worker':{stage:'部署架构',c:'#39c5cf',title:'RayVllmWorker',sum:'每个 worker 一个独立 vLLM LLM 实例，数据并行跑样本分片。',
+    items:['<b>类</b>：RayVllmGenerator(RayMixin,VllmMixin,Generator)。','<b>内部分批</b>：worker_batch_size。','<b>参数</b>：SamplingParams / BeamSearchParams。'],ref:'ray-vllm/utils/generator.py L392'},
+  'dep-grid':{stage:'部署架构',c:'#58a6ff',title:'Worker 网格',sum:'num_workers = ⌊总GPU/TP⌋，KV/权重不跨 worker 共享。',
+    items:['<b>拓扑</b>：数据并行，每 worker 整份权重。','<b>cleanup</b>：任务后 ray.kill + ray.shutdown 防 OOM。','<b>权衡</b>：无 TP 则长 prompt KV 需单卡吃下。'],ref:'base_generator.py RayMixin.cleanup'},
+  'hw':{stage:'910B硬件',c:'#39c5cf',title:'Ascend 910B',sum:'峰值算力、显存带宽、容量；预算的硬件基线。',
+    items:['<b>BF16</b>：400 TFLOPS 峰值','<b>HBM2e</b>：1.6 TB/s（B1/B2 样本）','<b>VRAM</b>：64 GB','<b>Compute/BW</b>：250 FLOP/B → 算力偏强','<b>TDP</b>：400W · Da Vinci v2'],ref:'Flopper.io / CSET 第三方汇总（华为未发布芯片级官方规格）'},
+  'model':{stage:'910B硬件',c:'#58a6ff',title:'Qwen3-8B 配置',sum:'GQA 8 KV 头显著降低 KV cache（相对 MHA 少 4×）。',
+    items:['<b>hidden</b>=4096 · <b>intermediate</b>=12288','<b>L</b>=36 · <b>H</b>=32 · <b>KV头</b>=8 · <b>D_head</b>=128','<b>N</b>≈8.2B（bf16 权重 16.4 GB）','<b>max_position</b>=40960','tie_word_embeddings=false'],ref:'huggingface.co/Qwen/Qwen3-8B config.json'},
+  'assume':{stage:'910B硬件',c:'#bc8cff',title:'线上推荐推理路径',sum:'非思考模式 → 单阶段恒前缀 beam search。',
+    items:['<b>enable_thinking=False</b>（推荐任务默认）','单阶段：prompt + &lt;|sid_begin|&gt;','无 CoT · 无二次 prefill','两阶段仅在思考模式 / RL rollout 出现'],ref:'base_generator.py L105-127（generate 分派逻辑）'},
+  'budget':{stage:'910B硬件',c:'#3fb950',title:'预算口径',sum:'decode 访存界、prefill 算力界；MFU 取 0.45~0.60。',
+    items:['<b>decode</b>：2N 字节 / BW 界','<b>prefill</b>：2N·S/(MFU·F) 界','<b>MFU</b>：0.45~0.60（保守档 1.2TB/s）','真机以 CANN / MindIE 实测为准'],ref:'本文推导 · Roofline 模型'},
+  'f-prefill':{stage:'910B硬件',c:'#39c5cf',title:'Prefill 时延公式',sum:'并行前向，算力界。',
+    items:['<b>T</b> = 2N·S/(MFU·F)','N=8.2G · S=prompt 长度 · F=400T'],ref:'本文推导'},
+  'f-decode':{stage:'910B硬件',c:'#39c5cf',title:'Decode 时延公式',sum:'逐 token 访存界（每步读全量权重）。',
+    items:['<b>T/tok</b> = 2N 字节 / BW','= 16.4 GB / 1.6 TB/s','≈10.3 ms/token（batch=1 下限）'],ref:'本文推导'},
+  'f-kv':{stage:'910B硬件',c:'#58a6ff',title:'KV cache 公式',sum:'GQA 8 头每 token 144KB（bf16）。',
+    items:['<b>公式</b>：2·L·KV·D·S·bytes','8B：147,456 × S × bytes','bf16 → 144KB/token；S=10K → 1.51GB/序列'],ref:'Qwen3-8B config.json（GQA）'},
+  'sc-reco':{stage:'910B场景',c:'#f0883e',title:'召回推荐',sum:'prefill 绑定，decode 仅占 6%。',
+    items:['<b>S</b>=10,240 · 输出 3（itemic）','<b>TTFT</b>≈840ms（MFU 0.5）','<b>decode</b> 3×18.7ms≈56ms（含 KV）','<b>总</b>≈0.90s · QPS≈1.2/卡（算力界）'],ref:'本文推导 · 保守口径 1.2TB/s'},
+  'sc-caption':{stage:'910B场景',c:'#bc8cff',title:'Item 理解',sum:'decode 主导，KV 小可大 batch。',
+    items:['<b>S</b>≈128 · 输出≈200','<b>TTFT</b>≈10.5ms','<b>decode</b> 200×17.1ms≈3.4s','<b>吞吐上限</b> ~52K tok/s（batch→∞）'],ref:'本文推导'},
+  'sc-explain':{stage:'910B场景',c:'#f85149',title:'推荐解释',sum:'最重：长 CoT + 长解释。',
+    items:['<b>thinking=on</b> · S=10K','CoT≤1,000 + 解释≈200 → 1,200 tok','TTFT 840ms + 1,200×18.7ms','<b>总</b>≈23.2s（batch=1）· 组批损 TPOT'],ref:'本文推导 · rec_reason batch=5 佐证'},
+  'sc-bound':{stage:'910B场景',c:'#d29922',title:'prefill/decode 分界',sum:'负载谱中两界的判定线。',
+    items:['TTFT &gt; decode ⇔ L &lt; S·BW_eff/(mfu_p·F)','⇔ L &lt; S/208（1.2TB/s · MFU 0.5/0.8）','线上召回 (10K, 3) 落在 prefill 界侧'],ref:'本文推导'},
+  'sc-note':{stage:'910B场景',c:'#f0883e',title:'召回要点',sum:'提 QPS 只能降 S / 加卡 / 提 MFU。',
+    items:['QPS≈1.2/卡 · 组批不加成','恒前缀 beam + prefix cache'],ref:'本文推导'},
+  'sc-note2':{stage:'910B场景',c:'#bc8cff',title:'理解要点',sum:'KV 极小 → 大 batch 吞吐型。',
+    items:['S=128 → 18MB KV/序列','吞吐上限 ~52K tok/s','评测 batch=250 即此逻辑'],ref:'eval_script.sh · item_understand'},
+  'sc-note3':{stage:'910B场景',c:'#f85149',title:'解释要点',sum:'S=10K 组批会让 TPOT 恶化。',
+    items:['单流 23.2s','KV 读随 batch 叠加','限流 + CoT 长度预算 + 早停'],ref:'eval_script.sh · rec_reason batch=5'},
+'node-embed':{stage:'数据·词表',c:'#39c5cf',title:'语义嵌入提取',sum:'用 Qwen3-8B-Embedding 把物品文本描述编码为 4096 维稠密向量，作为量化的输入。',
+    items:[
+      '<b>输入</b>：视频文本描述（标题/简介等），新数据集必须使用 Qwen3-8B-Embedding。',
+      '<b>输出</b>：4096 维语义嵌入；另提供多模态嵌入（5 帧，每帧 1152 维）供未来研究。',
+      '<b>动机</b>：把「物品」从离散 ID 变成连续语义，再离散化，架起模态鸿沟的桥。'
+    ],ref:'tokenizer/README.md · Qwen3-8B-Embedding'},
+  'node-rq':{stage:'数据·词表',c:'#39c5cf',title:'RQ-Kmeans 残差量化',sum:'三层、每层 8192 码本，逐层对残差做 K-Means，得到 (c₁,c₂,c₃) 层级码。',
+    items:[
+      '<b>层级结构</b>：c₁ 粗粒度 → c₂ → c₃ 细粒度；语义相似的物品共享更长前缀。',
+      '<b>实现</b>：ResKmeans.n_layers=3, codebook_size=8192, dim=4096。',
+      '<b>编码</b>：每层 argmin 找最近质心，x ← x − centroid[l][code] 后进入下一层。',
+      '<b>解码</b>：逐层累加质心，重建（有损）；loss = MSE + 相对误差。'
+    ],ref:'tokenizer/res_kmeans.py · encode/decode · faiss.Kmeans(spherical=False)'},
+  'node-corpora':{stage:'数据·词表',c:'#39c5cf',title:'三类推荐语料',sum:'用 itemic 组织原始元数据，构造三种互补的预训练语料。',
+    items:[
+      '<b>Itemic Dense Caption</b>：itemic → 自然语言描述，建立初始感知。',
+      '<b>Sequential User Behavior</b>：时序交互序列 next-item 预测，内化协同过滤与时序模式。',
+      '<b>Interleaved Persona Grounding</b>：离散 item ↔ 元数据交错叙事，做量化空间语义接地。'
+    ],ref:'data/onerec_data/pretrain/{item_understand,video_rec,user_profile}.py'},
+  'node-general':{stage:'数据·词表',c:'#39c5cf',title:'通用文本语料',sum:'与推荐语料混合训练，对抗分布偏移带来的灾难性遗忘。',
+    items:[
+      '<b>领域</b>：代码 Coding、STEM、医学 Medical，多语言（中/英等）。',
+      '<b>偏好</b>：推理密集（数学推导、逻辑谜题、代码），维持并增强推理。',
+      '<b>去重</b>：MinHash 模糊去重，剔除与评测基准高相似的样本，保证泛化真实。'
+    ],ref:'data/general_text/pretrain.csv · sft.csv · HuggingFace 数据集'},
+  'node-vocab':{stage:'数据·词表',c:'#39c5cf',title:'词表扩展',sum:'向 Qwen3 tokenizer 追加 itemic 特殊 token，扩充 vocab 并初始化新词嵌入。',
+    items:[
+      '<b>新增 token 数</b>：3 × 8192（s_a/s_b/s_c 各 8192）+ <span class=mono>&lt;|sid_begin|&gt;&lt;|sid_end|&gt;</span>。',
+      '<b>对齐</b>：vocab_size 对齐到 256 的倍数（TP/GEMM 友好）。',
+      '<b>初始化</b>：新 itemic embedding 从已有 embedding 均值/协方差的高斯分布采样。',
+      '<b>ID 段</b>：itemic_id_range [151669, 176246]（约 24578 个）。'
+    ],ref:'pretrain/tools/model_converter/expand_qwen3_vocab.py · generate_itemic_tokens()'},
+  'node-sid':{stage:'数据·词表',c:'#39c5cf',title:'Itemic Token 序列',sum:'每个物品被压成定长 3-token 序列，用特殊 token 包裹。',
+    items:[
+      '<b>格式</b>：<span class=mono>&lt;|sid_begin|&gt;&lt;s_a_5028&gt;&lt;s_b_6733&gt;&lt;s_c_2559&gt;&lt;|sid_end|&gt;</span>',
+      '<b>紧凑</b>：短、定长，支撑超长用户历史（32K 上下文）。',
+      '<b>层级语义</b>：相似物品共享前缀，模型可按 token 邻近迁移知识。',
+      '<b>统一词表</b>：V = V_text ∪ V_item，交互历史=长上下文序列。'
+    ],ref:'论文 §2.1 · data/onerec_data 各脚本 SID_FORMAT'},
+  'node-residual':{stage:'数据·词表',c:'#39c5cf',title:'残差 K-Means 实现',sum:'ResKmeans 用 torch 实现，训练用 faiss，编码用解析距离公式。',
+    items:[
+      '<b>训练</b>：逐层 faiss.Kmeans 拟合残差，centroids 存入 ParameterList。',
+      '<b>encode</b>：dist = ||x||² + ||c||² − 2·xᵀc（addmm），argmin 取码。',
+      '<b>decode</b>：out += centroids[l][code_l] 累加重建。',
+      '<b>可截断</b>：encode(x, n_layers≤3) 支持部分层编码。'
+    ],ref:'tokenizer/res_kmeans.py · class ResKmeans(nn.Module)'},
+  'node-enc':{stage:'数据·词表',c:'#39c5cf',title:'encode(x) 编码',sum:'给定 4096 维嵌入，逐层量化得到 [c₁,c₂,c₃]。',
+    items:[
+      '<b>公式</b>：dist = ||x||² + ||c||² − 2·xᵀc（等价欧氏距离平方）。',
+      '<b>步骤</b>：argmin 取最近质心下标 → 残差 x−centroid 传入下一层。',
+      '<b>输出</b>：torch.stack([code_l0, code_l1, code_l2])。'
+    ],ref:'tokenizer/res_kmeans.py · ResKmeans.encode()'},
+  'node-dec':{stage:'数据·词表',c:'#39c5cf',title:'decode(code) 解码',sum:'由离散码重建（近似）原始嵌入，量为有损压缩。',
+    items:[
+      '<b>步骤</b>：out = Σ_l centroids[l][code_l]。',
+      '<b>用途</b>：评估重建误差、计算 MSE / 相对损失。',
+      '<b>性质</b>：残差量化（RQ）类似 RQ-VAE，但用 K-Means 而非可学习码本。'
+    ],ref:'tokenizer/res_kmeans.py · ResKmeans.decode() / calc_loss()'},
+  'node-codebook':{stage:'数据·词表',c:'#39c5cf',title:'码本参数',sum:'三层码本的核心超参，决定了 itemic 的表达容量与粒度。',
+    items:[
+      '<b>n_layers = 3</b>（s_a/s_b/s_c）。',
+      '<b>codebook_size = 8192</b>：每层可表达 8192 个簇。',
+      '<b>dim = 4096</b>：与 Qwen3-8B-Embedding 对齐。',
+      '<b>表达容量</b>：理论上 8192³ ≈ 5.5×10¹¹ 组合。'
+    ],ref:'tokenizer/train_res_kmeans.py 参数默认值'},
+  'node-stg1':{stage:'预训练',c:'#58a6ff',title:'Stage 1 · Itemic-Text 对齐',sum:'冻结 LLM，只训练 itemic 的 embedding，把 itemic 拉进文本语义空间。',
+    items:[
+      '<b>冻结</b>：LLM 全部参数冻结；仅 itemic 对应 embedding 可训。',
+      '<b>tied embeddings</b>：0.6/1.7/4B 共享 embedding/lm_head，一并训练。',
+      '<b>独立投影</b>：8B+ 大模型输出投影对应 itemic 部分也训练。',
+      '<b>初始化</b>：新词 embedding 服从 N(μ_exist, Σ_exist)；lr = 1e-3。'
+    ],ref:'pretrain/README.md Stage1 · 论文 §4.2 · --freeze_llm --start_optimize_embedding_index'},
+  'node-stg2':{stage:'预训练',c:'#58a6ff',title:'Stage 2 · 全参数 Co-Pretraining',sum:'解冻全部参数，推荐+通用语料共预训练，注入推荐知识且防遗忘。',
+    items:[
+      '<b>目标</b>：捕获用户行为/物品语义/交互的复杂模式，同时保留世界知识。',
+      '<b>混合</b>：保持相当比例的通用语料贯穿本阶段。',
+      '<b>超参</b>：AdamW(β₁=.9, β₂=.95, wd=0.1)，lr=1e-4，cosine + 10% warmup。',
+      '<b>上下文</b>：32K tokens，处理超长交互历史。'
+    ],ref:'pretrain/README.md Stage2 · 论文 §4.2'},
+  'node-sft':{stage:'后训练',c:'#3fb950',title:'多任务 SFT',sum:'恢复基础指令遵循与推理，为后续蒸馏/RL 打底。',
+    items:[
+      '<b>数据</b>：8 个推荐任务 + 通用指令/复杂推理（开源高质量）。',
+      '<b>序列化</b>：Qwen3 chat template 组织为对话格式。',
+      '<b>lr</b>：2e-5 → 5e-6（低于预训练）。',
+      '<b>思维控制</b>：随机附加 /think、/no_think 后缀，对齐 Qwen3 三种思维范式。'
+    ],ref:'pretrain/examples/posttrain_sft.sh · add_think_pattern:true'},
+  'node-distill':{stage:'后训练',c:'#d29922',title:'On-Policy 蒸馏',sum:'用同尺寸 Qwen3 作教师，学生在自采样轨迹上以 reverse-KL 为奖励做策略梯度，恢复通用推理。',
+    items:[
+      '<b>奖励</b>：R_KL = clip(−D_KL(π_θ ‖ π_teacher), α, β)，逐 token。',
+      '<b>词表差异</b>：教师不认识 itemic → log π_teacher 设为 −1e9 并截断。',
+      '<b>Prompt</b>：只从通用域采样（期望纯文本输出）。',
+      '<b>探索</b>：高温采样主动暴露 itemic 误激活并纠正。'
+    ],ref:'verl_distillation/recipe/onpolicy_distill/ · 论文 §5.2（图 7）'},
+  'node-rl':{stage:'后训练',c:'#f0883e',title:'Rec-RL（GRPO）',sum:'最后阶段用 GRPO 直接优化命中指标，规则奖励 + 两阶段 rollout。',
+    items:[
+      '<b>GRPO</b>：无 critic，组内 G 条采样归一化优势；β·KL 约束于 π_ref。',
+      '<b>奖励</b>：命中目标 itemic token = +1，否则 0（5 个核心推荐任务）。',
+      '<b>两阶段 rollout</b>：先采样 CoT 到「response」，再插入 &lt;sid_begin&gt; 用 beam search(32)。',
+      '<b>效果</b>：SFT 有 exposure bias，RL 区分近乎命中 vs 无关，实现「软排序」。'
+    ],ref:'verl_rl/recipe/onerec/{onerec_recipe,onerec_vllm_rollout}.py · 论文 §5.3'},
+  'node-model':{stage:'模型',c:'#bc8cff',title:'OneRec-1.7B',sum:'小模型采用 tied embeddings，输出投影与词嵌入共享。',
+    items:[
+      '<b>骨干</b>：Qwen3-1.7B（继承其后训练能力）。',
+      '<b>Standard</b>：开源数据 ~33B token。',
+      '<b>Pro</b>：~130B token 工业语料。',
+      '<b>解码建议</b>：1.7B 建议 top_p=0.95, top_k=20, temp=0.75。'
+    ],ref:'README.md Model Zoo · transformers>=4.51.0 加载'},
+  'node-model8':{stage:'模型',c:'#bc8cff',title:'OneRec-8B',sum:'大模型有独立的输出投影层，词表扩展时输出投影对应 itemic 也要训练。',
+    items:[
+      '<b>骨干</b>：Qwen3-8B。',
+      '<b>Standard / Pro</b>：33B / 130B token。',
+      '<b>推理</b>：enable_thinking=True/False 切换思维/非思维。',
+      '<b>生成</b>：max_new_tokens 可达 32768。'
+    ],ref:'README.md · AutoModelForCausalLM 示例'},
+  'node-recif':{stage:'评测',c:'#bc8cff',title:'RecIF-Bench',sum:'首个整体化推荐指令遵循基准，8 任务 4 层能力、3 异构域。',
+    items:[
+      '<b>规模</b>：~1.2 亿交互、200k 用户、15.3M 物品。',
+      '<b>任务</b>：8 个，覆盖 L0~L3。',
+      '<b>指标</b>：Recall@32、AUC、LLM Score。',
+      '<b>引擎</b>：vLLM 批量生成 + 规则/LLM 评分。'
+    ],ref:'benchmarks/benchmark/tasks/v1_0/registry.py · 论文 §3'},
+  'node-amazon':{stage:'评测',c:'#bc8cff',title:'跨域迁移（Amazon）',sum:'10 个 Amazon 数据集 zero/few-shot，验证作为基础模型的迁移能力。',
+    items:[
+      '<b>结果</b>：平均 +26.8% Recall@10（vs 次优方法）。',
+      '<b>策略</b>：Text-Augmented Itemic Tokens = [itemic] + [keywords]。',
+      '<b>优势</b>：不破坏既有层级语义，碰撞率最低（0.47%）。'
+    ],ref:'论文 §6 · GRLM 实现细节'},
+  'node-domain':{stage:'数据·词表',c:'#39c5cf',title:'三域原始元数据',sum:'来自快手匿名日志，user-based 划分避免泄漏。',
+    items:[
+      '<b>短视频</b>：195k 用户、13.1M 物品、94.4M 交互。',
+      '<b>广告</b>：151k 用户、178k 物品、5.3M 交互。',
+      '<b>商品</b>：144k 用户、2.05M 物品、20.1M 交互。',
+      '<b>总计</b>：202k 用户、15.3M 物品、119.9M 交互。'
+    ],ref:'论文 Table 1 · RecIF-Bench 统计'},
+  'node-scaling':{stage:'预训练',c:'#58a6ff',title:'推荐域缩放律',sum:'用 Hoffmann 方法拟合 compute-optimal 前沿。',
+    items:[
+      '<b>规模谱</b>：N ∈ {0.6,1.7,4,8,14}B。',
+      '<b>约束</b>：C ≈ 6ND；余弦调度对齐训练时域。',
+      '<b>结论</b>：N_opt ∝ C^0.44，D_opt ∝ C^0.56。',
+      '<b>意义</b>：推荐能力可预测缩放，且缓解遗忘。'
+    ],ref:'论文 §4.3 图 5'},
+  'node-twostage':{stage:'后训练',c:'#f0883e',title:'Two-Stage Rollout',sum:'RL 生成的关键技巧：把「思维」与「itemic 预测」解耦。',
+    items:[
+      '<b>Stage 1</b>：正常采样生成 CoT，stop 在「 response」（≤1024 token）。',
+      '<b>Stage 2</b>：拼接前缀 <span class=mono>\n&lt;|sid_begin|&gt;</span>，改用 beam search（beam=32）生成 itemic。',
+      '<b>返回</b>：返回全部 beam 供 GRPO 组内比较（共享 UID）。',
+      '<b>意义</b>：推荐候选离散 → 束搜索比采样更稳，软排序更准。'
+    ],ref:'verl_rl/recipe/onerec/onerec_vllm_rollout.py · _two_stage_generation()'},
+  'node-reward':{stage:'后训练',c:'#f0883e',title:'规则奖励（Hit）',sum:'稀疏、可解释的命中奖励，直接对齐排序指标。',
+    items:[
+      '<b>r(Rᵢ)</b>：目标 itemic ∈ 生成序列 Rᵢ → +1.0，否则 0。',
+      '<b>多指标</b>：同时统计 partial_hit、hit_reward、pass_at_1、format_reward。',
+      '<b>层级匹配</b>：s_a+s_b+s_c 全中=100，s_a+s_b=10，仅 s_a=1（partial）。'
+    ],ref:'verl_rl/recipe/onerec/onerec_recipe.py · compute_score() / partial_hit_reward()'},
+  'node-embed2':{stage:'数据·词表',c:'#39c5cf',title:'语义嵌入提取',sum:'文本描述 → Qwen3-8B-Embedding → 4096 维。',
+    items:[
+      '<b>模型</b>：Qwen3-8B-Embedding（新数据必须一致）。',
+      '<b>维度</b>：4096。',
+      '<b>多模态（可选）</b>：5 帧 × 1152 维视觉嵌入。'
+    ],ref:'tokenizer/README.md'},
+  'node-rq2':{stage:'数据·词表',c:'#39c5cf',title:'RQ-Kmeans 分层量化',sum:'三层顺序聚类，残差逐层精化，得到层级码。',
+    items:[
+      '<b>Layer a</b>：对原始嵌入聚类 → c₁，取残差。',
+      '<b>Layer b/c</b>：对残差继续聚类 → c₂ / c₃。',
+      '<b>语义性质</b>：前缀共享 ≈ 语义近邻。'
+    ],ref:'tokenizer/train_res_kmeans.py'},
+  'node-dc':{stage:'数据·词表',c:'#39c5cf',title:'Itemic Dense Caption',sum:'itemic → 自然语言 caption，建立对齐感知。',
+    items:['<b>方向</b>：itemic（输入）→ caption（目标）。','<b>作用</b>：抽象离散表示 ↔ 文本描述的语义桥。','<b>任务</b>：激发 L0 语义对齐能力。'],ref:'data/onerec_data/pretrain/item_understand.py'},
+  'node-seq':{stage:'数据·词表',c:'#39c5cf',title:'Sequential User Behavior',sum:'时序交互序列做 next-item 预测。',
+    items:['<b>信号</b>：view / like / share 等交互时序。','<b>任务</b>：next-item 预测，内化协同过滤+时序。','<b>关键</b>：长序列 → 32K 上下文建模。'],ref:'data/onerec_data/pretrain/video_rec.py'},
+  'node-persona':{stage:'数据·词表',c:'#39c5cf',title:'Interleaved Persona Grounding',sum:'离散 item ↔ 用户元数据交错叙事。',
+    items:['<b>构成</b>：静态属性+搜索行为+交互序列+兴趣总结。','<b>作用</b>：量化空间深层语义接地。','<b>形式</b>：叙事式用户画像 P_u。'],ref:'data/onerec_data/pretrain/user_profile.py'},
+  'node-parquet':{stage:'数据·词表',c:'#39c5cf',title:'统一 Parquet 格式',sum:'数据标准化的统一容器。',
+    items:['<b>字段</b>：uuid/source/metadata/messages(或 segments)。','<b>规范</b>：每文件 ~1000 样本，role∈{user,assistant,system}。','<b>分片</b>：part-00000-of-N.parquet。'],ref:'data/README.md · Format Specification'},
+  'node-vocab2':{stage:'预训练',c:'#58a6ff',title:'0 · 词表扩展',sum:'训练前置步骤：扩词表 + 初始化新词嵌入。',
+    items:['<b>token</b>：3×8192 + 2 特殊。','<b>对齐</b>：256 倍数。','<b>范围</b>：itemic id [151669,176246]。','<b>脚本</b>：expand_qwen3_vocab.sh。'],ref:'pretrain/scripts/expand_qwen3_vocab.sh'},
+  'node-stg1b':{stage:'预训练',c:'#58a6ff',title:'Stage 1 对齐（详）',sum:'冻结主干，只训 itemic embedding。',
+    items:['<b>可训</b>：itemic embedding（小模型含 lm_head 对应部分）。','<b>冻结</b>：其余全冻结。','<b>初始化</b>：N(μ_exist, Σ_exist)。','<b>lr</b>：1e-3。'],ref:'pretrain/README.md · --freeze_llm'},
+  'node-stg2b':{stage:'预训练',c:'#58a6ff',title:'Stage 2 全参数（详）',sum:'全参数共预训练。',
+    items:['<b>解冻</b>：全部参数。','<b>数据</b>：推荐 + 通用混合。','<b>超参</b>：lr=1e-4, ctx=32K, AdamW。'],ref:'pretrain/README.md · 论文 §4.2'},
+  'node-mix':{stage:'预训练',c:'#58a6ff',title:'数据混合 · 防遗忘',sum:'两股数据流按比例混合，缓解 catastrophic forgetting。',
+    items:['<b>推荐语料</b>：专业领域知识。','<b>通用语料</b>：维持世界知识与推理。','<b>配比</b>：见附录 B.4 详细构成。'],ref:'论文 §4.1.2 · data/general_text'},
+  'node-slaw1':{stage:'预训练',c:'#58a6ff',title:'N_opt ∝ C^0.44',sum:'算力预算下最优模型规模呈幂律。',
+    items:['<b>含义</b>：算力增大时，最优参数规模以 0.44 次方增长。'],ref:'论文 式(2) · 图 5'},
+  'node-slaw2':{stage:'预训练',c:'#58a6ff',title:'D_opt ∝ C^0.56',sum:'最优 token 预算的幂律。',
+    items:['<b>含义</b>：token 与参数分配接近 Hoffmann 中性律。'],ref:'论文 式(2) · 图 5'},
+  'node-entropy':{stage:'预训练',c:'#58a6ff',title:'低熵推荐任务',sum:'推荐不可约损失远低于文本 → 更确定、更易饱和。',
+    items:['<b>E≈0.42</b> vs 文本 1.69。','<b>启示</b>：需更高质多样语料扩展信息流形。'],ref:'论文 §4.3'},
+  'node-sftb':{stage:'后训练',c:'#3fb950',title:'Multi-Task SFT',sum:'恢复指令遵循与推理。',
+    items:['<b>数据</b>：8 推荐任务 + 通用。','<b>lr</b>：2e-5→5e-6。','<b>思维</b>：/think /no_think。'],ref:'论文 §5.1'},
+  'node-distillb':{stage:'后训练',c:'#d29922',title:'On-Policy 蒸馏',sum:'教师指导学生自采样轨迹。',
+    items:['<b>奖励</b>：clip(−reverseKL)。','<b>教师</b>：同尺寸 Qwen3。','<b>稳健</b>：itemic 惩罚+截断+高温。'],ref:'论文 §5.2 · 图 7'},
+  'node-distrloop':{stage:'后训练',c:'#d29922',title:'学生 Policy π_θ',sum:'自采样生成轨迹。',
+    items:['<b>采样</b>：高温探索词表。','<b>prompt</b>：仅通用域。','<b>规模</b>：200K 问题。'],ref:'论文 §5.2'},
+  'node-distrteacher':{stage:'后训练',c:'#d29922',title:'教师 π_teacher',sum:'同尺度 Qwen3 打分。',
+    items:['<b>打分</b>：逐 token reverse-KL。','<b>差异</b>：不认识 itemic。','<b>裁剪</b>：R=clip(−D_KL,α,β)。'],ref:'论文 §5.2'},
+  'node-rlb':{stage:'后训练',c:'#f0883e',title:'Rec-RL (GRPO)',sum:'直接优化命中。',items:[]},
+  'node-grpo':{stage:'后训练',c:'#f0883e',title:'GRPO 目标',sum:'组相对优势，无需 critic。',
+    items:['<b>采样</b>：G 条响应。','<b>优势</b>：组内归一化。','<b>KL</b>：−β·KL(π_θ‖π_ref)。'],ref:'论文 式(8)'},
+  'node-odpolicy':{stage:'后训练',c:'#d29922',title:'Policy Model',sum:'学生自采样。',
+    items:['<b>轨迹</b>：o ~ π_θ。','<b>梯度</b>：∇θJ = E[Σ ∇θ logπ · R_KL]。'],ref:'论文 §5.2'},
+  'node-odteacher':{stage:'后训练',c:'#d29922',title:'Teacher Model',sum:'reverse KL 反馈。',items:['<b>信号</b>：r = reverse KL。','<b>裁剪</b>：clip 稳定训练。'],ref:'论文 式(6)(7)'},
+  'node-odpenalty':{stage:'后训练',c:'#d29922',title:'词表差异稳健处理',sum:'三项防御避免崩坏。',
+    items:['<b>①</b> 通用域 prompt。','<b>②</b> itemic 惩罚−1e9+截断。','<b>③</b> 高温探索。'],ref:'论文 §5.2'},
+  'node-l0':{stage:'评测',c:'#bc8cff',title:'L0 语义对齐',sum:'Item Understanding：SID→Caption。',
+    items:['<b>任务</b>：由 itemic 生成视频描述。','<b>验证</b>：itemic 与语言是否对齐。'],ref:'benchmarks/tasks/v1_0/item_understand/'},
+  'node-l1':{stage:'评测',c:'#3fb950',title:'L1 基础预测',sum:'四大预测任务。',
+    items:['<b>内含</b>：短视频/广告/商品 Rec + 标签预测。','<b>指标</b>：Recall@32、AUC。'],ref:'benchmarks/tasks/v1_0/recommendation/ + label_pred/'},
+  'node-l2':{stage:'评测',c:'#d29922',title:'L2 指令遵循',sum:'交互与标签条件推荐。',
+    items:['<b>交互 Rec</b>：结合画像+搜索词。','<b>标签条件 Rec</b>：按交互类型预测。'],ref:'benchmarks/tasks/v1_0/recommendation/'},
+  'node-l3':{stage:'评测',c:'#f85149',title:'L3 推理',sum:'推荐解释。',
+    items:['<b>任务</b>：分析用户兴趣并解释推荐。','<b>指标</b>：LLM Score。'],ref:'benchmarks/tasks/v1_0/rec_reason/'},
+  'node-amazon2':{stage:'评测',c:'#bc8cff',title:'Amazon 迁移',sum:'跨域泛化验证。',
+    items:['<b>提升</b>：+26.8% R@10。','<b>策略</b>：Text-Augmented Itemic。'],ref:'论文 §6'},
+  'node-keybuilt':{stage:'模型',c:'#bc8cff',title:'关键架构决策',sum:'结构不变，仅词表扩展。',
+    items:['<b>严格一致</b>：与 Qwen3 同架构。','<b>仅改</b>：词表 + embedding 初始化。'],ref:'论文 §4.2'},
+  'node-keyrepo':{stage:'模型',c:'#9cc9ff',title:'代码仓库映射',sum:'架构 ↔ 实现目录。',
+    items:['<b>tokenizer</b> → 残差量化。','<b>pretrain</b> → 两阶段预训练。','<b>verl_rl</b> → GRPO。','<b>verl_distillation</b> → 蒸馏。'],ref:'本地仓库 OpenOneRec/'},
+  'node-corpora2':{stage:'数据·词表',c:'#39c5cf',title:'三类推荐语料',sum:'把原始元数据用 itemic 组织成三种预训练语料。',
+    items:['<b>Caption</b>：itemic→文本描述（对齐感知）。','<b>序列行为</b>：next-item 预测（协同过滤）。','<b>Persona</b>：item↔元数据交错（语义接地）。'],ref:'data/onerec_data/pretrain/'},
+  'node-finetune':{stage:'后训练',c:'#f0883e',title:'SFT + GRPO 统一实现',sum:'RL 阶段的抽象参数化器统一了蒸馏与 SFT 的代码路径。',
+    items:['<b>前缀约束</b>：生成必须从  response 后接 &lt;sid_begin&gt; 开始。','<b>束搜索</b>：beam=32 产出候选组供 GRPO 比较。','<b>共用框架</b>：与蒸馏共用 arc 参数化/worker 编排。'],ref:'verl_rl/recipe/onerec/onerec_fsdp_workers.py'},
+  'node-layers':{stage:'评测',c:'#bc8cff',title:'能力层级语义',sum:'四层金字塔自底向上递进，各层对应不同能力。',
+    items:['<b>L0 对齐</b>：一切下游任务前提。','<b>L1 预测</b>：冷门检索/分类能力。','<b>L2 遵循</b>：指令引导的生成。','<b>L3 推理</b>：综合信息并表达。'],ref:'论文 §3.2 · benchmarks/tasks/v1_0/'},
+  'node-m1':{stage:'模型',c:'#bc8cff',title:'OneRec-1.7B',sum:'小模型（tied embeddings），Standard 版开源数据。',
+    items:['<b>骨干</b>：Qwen3-1.7B。','<b>语料</b>：开源数据 ~33B token。','<b>示例</b>：短视频 R@32 = 0.0272。'],ref:'huggingface.co/OpenOneRec/OneRec-1.7B'},
+  'node-m2':{stage:'模型',c:'#bc8cff',title:'OneRec-8B',sum:'大模型（独立输出投影），Standard 版。',
+    items:['<b>骨干</b>：Qwen3-8B。','<b>语料</b>：~33B token。','<b>示例</b>：短视频 R@32 = 0.0355。'],ref:'huggingface.co/OpenOneRec/OneRec-8B'},
+  'node-m3':{stage:'模型',c:'#bc8cff',title:'OneRec-1.7B-Pro',sum:'扩展语料的小模型 Pro 版。',
+    items:['<b>骨干</b>：Qwen3-1.7B。','<b>语料</b>：~130B token（工业）。','<b>示例</b>：短视频 R@32 = 0.0274。'],ref:'huggingface.co/OpenOneRec/OneRec-1.7B-pro'},
+  'node-m4':{stage:'模型',c:'#bc8cff',title:'OneRec-8B-Pro ⭐',sum:'全面 SOTA 的旗舰版本。',
+    items:['<b>骨干</b>：Qwen3-8B。','<b>语料</b>：~130B token。','<b>表现</b>：短视频 R@32=0.0369、解释 LLM 4.04。'],ref:'huggingface.co/OpenOneRec/OneRec-8B-pro'},
+  'node-mixrec':{stage:'预训练',c:'#58a6ff',title:'推荐域语料（规模）',sum:'预训练核心领域数据。',
+    items:['<b>覆盖</b>：160k 用户、13M captions。','<b>Standard</b>：32B token / 41.3M 样本。','<b>Pro</b>：130B token / 179.1M 样本（~20M 用户）。'],ref:'论文 §4.1.1'},
+  'node-mixgen':{stage:'预训练',c:'#58a6ff',title:'通用域语料',sum:'维持世界知识与推理。',
+    items:['<b>领域</b>：代码/STEM/医学。','<b>策略</b>：推理密集优先。','<b>去重</b>：MinHash 隔离评测。'],ref:'论文 §4.1.2'},
+  'node-sota':{stage:'模型',c:'#bc8cff',title:'RecIF-Bench 全面 SOTA',sum:'显著超越 LC-Rec / TIGER。',
+    items:['<b>8 任务</b>：全部 SOTA。','<b>迁移</b>：Amazon +26.8% R@10。','<b>结构</b>：严格等于 Qwen3。'],ref:'README.md · 论文 §6'}
+};
+
+/* ---- tooltip / drawer ---- */
+const tip = document.getElementById('tip');
+const drawer = document.getElementById('drawer');
+const dcontent = document.getElementById('dcontent');
+document.getElementById('dclose').addEventListener('click',()=>drawer.classList.remove('open'));
+
+function positionTip(e){const p=16,w=tip.offsetWidth,h=tip.offsetHeight;let x=e.clientX+p,y=e.clientY+p;if(x+w>innerWidth-8)x=e.clientX-w-p;if(y+h>innerHeight-8)y=e.clientY-h-p;tip.style.left=x+'px';tip.style.top=y+'px';}
+function showTip(e,id){const d=DB[id];if(!d)return;tip.innerHTML='<h4>'+d.title+'</h4><div class="t">'+d.sum+'</div>';tip.style.display='block';positionTip(e);}
+function hideTip(){tip.style.display='none';}
+function openDrawer(id){const d=DB[id];if(!d)return;const items=(d.items||[]).map(s=>'<li>'+s+'</li>').join('');
+ dcontent.innerHTML='<span class="stage-chip" style="color:'+d.c+';border:1px solid '+d.c+'">'+d.stage+'</span><h3>'+d.title+'</h3><p class="dsum">'+d.sum+'</p>'+(items?'<ul>'+items+'</ul>':'')+(d.ref?'<div class="ref"><b>源码依据</b><br>'+d.ref+'</div>':'');
+ drawer.classList.add('open');}
+
+document.querySelectorAll('[data-id]').forEach(el=>{
+  el.classList.add('nd');
+  el.addEventListener('mouseenter',e=>showTip(e,el.getAttribute('data-id')));
+  el.addEventListener('mousemove',e=>{if(tip.style.display!=='none')positionTip(e)});
+  el.addEventListener('mouseleave',hideTip);
+  el.addEventListener('click',e=>{e.stopPropagation();openDrawer(el.getAttribute('data-id'))});
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){drawer.classList.remove('open');hideTip()}});
+document.addEventListener('click',()=>drawer.classList.remove('open'));
+
+/* ---- nav ---- */
+const tabs=document.querySelectorAll('#tabs button');
+const sections=['a0','a1','a2','a3','a4','a5','s5','s0','s1','s2','s3','s6','s7','s8','s9','s4','s10'];
+tabs.forEach(b=>b.addEventListener('click',()=>document.getElementById(b.getAttribute('data-t')).scrollIntoView({behavior:'smooth'})));
+const io=new IntersectionObserver(es=>{es.forEach(en=>{if(en.isIntersecting)tabs.forEach(b=>b.classList.toggle('active',b.getAttribute('data-t')===en.target.id))})},{rootMargin:'-40% 0px -55% 0px'});
+sections.forEach(id=>{const s=document.getElementById(id);if(s)io.observe(s)});
+
+/* ---- calculator ---- */
+function fmt(x,unit=''){ if(x===0)return '0'+unit; if(Math.abs(x)>=1e9)return (x/1e9).toFixed(2)+' G'+unit; if(Math.abs(x)>=1e6)return (x/1e6).toFixed(2)+' M'+unit; if(Math.abs(x)>=1e3)return (x/1e3).toFixed(2)+' K'+unit; return x.toFixed(2)+unit; }
+function calc(){
+  const L=+document.getElementById('in_L').value||36;
+  const H=+document.getElementById('in_H').value||8;
+  const D=+document.getElementById('in_D').value||128;
+  const N=+document.getElementById('in_N').value||8; // 亿
+  const S=+document.getElementById('in_S').value||10240;
+  const cot=+document.getElementById('in_cot').value||512;
+  const beam=+document.getElementById('in_beam').value||32;
+  const bytes=+document.getElementById('in_bytes').value||2;
+  document.getElementById('v_S').textContent=S;
+  document.getElementById('v_cot').textContent=cot;
+  document.getElementById('v_beam').textContent=beam;
+  const Np=N*1e9; // params
+  const kvPerToken = 2*L*H*D*bytes; // bytes per token per seq
+  const kvSingle = kvPerToken * S; // single seq total KV
+  const kvPrompt = kvPerToken * Math.min(S,10240);
+  // prefill flops
+  const prefillFlops = 2*Np*S;
+  const prefill2 = 2*Np*(S+cot); // stage2 re-prefill with cot
+  const decodePerToken = 2*Np;
+  const decodeCot = decodePerToken*cot;
+  const decodeBeam = decodePerToken*3*beam;
+  const totalPrefill = prefillFlops + prefill2;
+  const totalDecode = decodeCot + decodeBeam;
+  const out=[];
+  out.push({label:'单序列 KV cache', v:fmt(kvSingle,'B'), cls: kvSingle>1.2e10?'warn':'ok', pct:Math.min(100,kvSingle/ (1.6e10)*100), hint:'2·L·H·D_head·S·bytes'});
+  out.push({label:'prompt(10K) KV 占比', v:fmt(kvPrompt,'B'), cls:'ok', pct:Math.min(100,kvPrompt/kvSingle*100 || 0), hint:'10K 前缀 KV'});
+  out.push({label:'prefill FLOPs（含二次）', v:fmt(totalPrefill), cls:'warn', pct:Math.min(100,totalPrefill/1e14*100), hint:'≈2N·(2S+cot)'});
+  out.push({label:'decode FLOPs', v:fmt(totalDecode), cls:'ok', pct:Math.min(100,totalDecode/1e13*100), hint:'≈2N·(cot+3·beam)'});
+  out.push({label:'每 decode token', v:fmt(decodePerToken,' F'), cls:'ok', pct:0, hint:'≈2N'});
+  out.push({label:'KV/参数比', v:(kvSingle/ (Np*2)).toFixed(3)+'×', cls:'ok', pct:0, hint:'KV 相对权重(bf16)占用'});
+  document.getElementById('calcOut').innerHTML=out.map(o=>{
+    return '<div class="res '+o.cls+'"><div class="rv">'+o.v+'</div><div class="rl">'+o.label+'</div>'+ (o.pct>0?'<div class="bar"><i style="width:'+o.pct+'%"></i></div>':'') +'<div class="rl">'+o.hint+'</div></div>';
+  }).join('');
+}
+['in_L','in_H','in_D','in_N','in_S','in_cot','in_beam','in_bytes'].forEach(id=>document.getElementById(id).addEventListener('input',calc));
+calc();
+
+/* ---- 910B 预算（自 OpenOneRec_910B_budget.html 整合；fmt 复用上方定义） ---- */
+const MODELS = {
+  '8':  {N:8.2e9, L:36, H:32, KV:8, D:128, seqDefault:10240, label:'Qwen3-8B'},
+  '1.7':{N:1.7e9, L:28, H:16, KV:8, D:128, seqDefault:10240, label:'Qwen3-1.7B'}
+};
+const F_TFLOPS = 400e12; // BF16 peak
+const KV_BYTES_PER_TOK = 147456; // 8B · bf16 · GQA-8: 2·36·8·128·2
+function ms(x){
+  if(x>=1) return x.toFixed(2)+' s';
+  if(x>=1e-3) return (x*1e3).toFixed(2)+' ms';
+  return (x*1e6).toFixed(1)+' µs';
+}
+function renderTable(el, rows){
+  let h = '<thead><tr><th>项目</th><th>数值</th><th>口径/公式</th></tr></thead><tbody>';
+  rows.forEach(r=> h+= '<tr><td class="mono">'+r[0]+'</td><td class="'+(r[3]||'mono')+'">'+r[1]+'</td><td class="mono" style="color:var(--muted)">'+r[2]+'</td></tr>');
+  h+='</tbody>';
+  el.innerHTML = h;
+}
+function buildScenario(label, BW, mfup, mfud){
+  const m = MODELS['8'];
+  const S = 10240, beam = 32;
+  const bwEff = BW*mfud;
+  const tTok = 2*m.N/bwEff;
+  const kvRead = KV_BYTES_PER_TOK*S/bwEff;
+  const tTokKv = tTok + kvRead;
+  const tPrefill = 2*m.N*S/(mfup*F_TFLOPS);
+  const tReq = tPrefill + 3*tTokKv;
+  const thrCeil = bwEff/(KV_BYTES_PER_TOK*S);
+  const qps = mfup*F_TFLOPS/(2*m.N*S);
+  const tbs = (bwEff/1e12).toFixed(2)+' TB/s';
+  const rows = [
+    ['TPOT（batch=1 · 权重界）', ms(tTok), '2N 字节/(BW·mfu_d) = 16.4 GB / '+tbs],
+    ['TPOT（含 KV 读 @S=10K）', ms(tTokKv), '+ 144KB×S / BW_eff = '+ms(kvRead)],
+    ['TTFT（S=10K）', ms(tPrefill), '2N·S/(mfu_p·F) = 2·8.2G·10240/'+(mfup*400)+'T'],
+    ['单请求 latency（召回 3 tok）', ms(tReq), 'TTFT + 3×TPOT · prefill 占 '+Math.round(tPrefill/tReq*100)+'%'],
+    ['单流吞吐（batch=1）', (1/tTok).toFixed(0)+' tok/s', '= 1/TPOT（权重界）'],
+    ['在线吞吐上限（batch→∞）', thrCeil.toFixed(0)+' tok/s', 'KV 界：BW_eff/(144KB×S)'],
+    ['召回 QPS 上限（prefill 界）', qps.toFixed(2)+' req/s', 'mfu_p·F/(2N·S) · 组批不加成'],
+    ['beam=32 decode（无 cache）', ms(3*tTokKv*beam), '3 tok × 32 beam × TPOT'],
+    ['beam=32 decode（prefix cache）', ms(3*tTokKv), '共享前缀 → 仅 3×TPOT']
+  ];
+  return {rows: rows};
+}
+const BTA = buildScenario('场景 A', 1600e9, 0.55, 0.85);
+const BTB = buildScenario('场景 B', 1200e9, 0.50, 0.80);
+const BTC = buildScenario('场景 C', 1200e9, 0.55, 0.88);
+const hlMap = i => i===3?'hl':((i===6||i===7)?'warn':'');
+renderTable(document.getElementById('tblA'), BTA.rows.map((x,i)=> [x[0], x[1], x[2], hlMap(i)]));
+renderTable(document.getElementById('tblB'), BTB.rows.map((x,i)=> [x[0], x[1], x[2], hlMap(i)]));
+renderTable(document.getElementById('tblC'), BTC.rows.map((x,i)=> [x[0], x[1], x[2] + '（TP8 分片）', hlMap(i)]));
+
+function renderMem(){
+  const m = MODELS['8'];
+  const bytes = +document.getElementById('mem_prec').value;
+  const S = +document.getElementById('mem_seq').value;
+  const tp = +document.getElementById('mem_tp').value;
+  const w = 2*m.N;
+  const wPer = w/tp;
+  const kvPerSeq = 2*m.L*m.KV*m.D*bytes*S;
+  const kvGB = kvPerSeq/1e9;
+  const runtime = 4e9;
+  const avail = 64e9 - wPer - runtime;
+  const maxSeq = Math.floor(avail/kvPerSeq);
+  document.getElementById('v_mem_seq').textContent = S;
+  const rows = [
+    ['权重（bf16）', (wPer/1e9).toFixed(1)+' GB'+(tp>1?'（÷TP8）':''), '2×N×2B / TP'],
+    ['梯度/运行时自留', (runtime/1e9).toFixed(1)+' GB', 'CANN + activation 常驻'],
+    ['KV / 序列（S='+S+'）', kvGB.toFixed(2)+' GB', '2·L·KV·D·S·bytes'],
+    ['KV / token', (2*m.L*m.KV*m.D*bytes/1e3).toFixed(0)+' KB', 'GQA 8 头'],
+    ['剩余可用', (Math.max(0,avail)/1e9).toFixed(1)+' GB', '64 − 权重 − 运行时'],
+    ['最大并发序列', maxSeq>0? maxSeq+' 条':'OOM', '可用 / 每序列 KV']
+  ];
+  document.getElementById('memTbl').innerHTML =
+    '<thead><tr><th>项</th><th>数值</th><th>口径</th></tr></thead><tbody>'+
+    rows.map(r=>'<tr><td class="mono">'+r[0]+'</td><td class="mono">'+r[1]+'</td><td class="mono" style="color:var(--muted)">'+r[2]+'</td></tr>').join('')+'</tbody>';
+  document.getElementById('memOut').innerHTML = [
+    {l:'权重占用', v:(wPer/1e9).toFixed(1)+' GB', cls:''},
+    {l:'KV/序列', v:kvGB.toFixed(2)+' GB', cls:kvGB>2?'warn':''},
+    {l:'最大并发序列', v:maxSeq>0? maxSeq+' 条':'OOM', cls:maxSeq<64?'warn':''},
+    {l:'KV 占剩余比', v:(Math.min(100,kvPerSeq/Math.max(1,avail)*100)).toFixed(1)+'%', cls:''}
+  ].map(o=>'<div class="res '+o.cls+'"><div class="rv">'+o.v+'</div><div class="rl">'+o.l+'</div></div>').join('');
+}
+['mem_seq','mem_prec','mem_tp'].forEach(id=>document.getElementById(id).addEventListener('input', renderMem));
+renderMem();
+
+function renderCalc(){
+  const key = document.getElementById('ci_model').value;
+  const m = MODELS[key];
+  const S = +document.getElementById('ci_S').value;
+  const beam = +document.getElementById('ci_beam').value;
+  const BW = (+document.getElementById('ci_bw').value)*1e9;
+  const mfup = +document.getElementById('ci_mfup').value/100;
+  const mfud = +document.getElementById('ci_mfud').value/100;
+  const out = +document.getElementById('ci_out').value;
+  const batch = +document.getElementById('ci_batch').value;
+  document.getElementById('v_ci_S').textContent = S;
+  document.getElementById('v_ci_beam').textContent = beam;
+  document.getElementById('v_ci_mfup').textContent = (mfup*100)+'%';
+  document.getElementById('v_ci_mfud').textContent = (mfud*100)+'%';
+  document.getElementById('v_ci_out').textContent = out;
+  document.getElementById('v_ci_batch').textContent = batch;
+  const tPrefill = 2*m.N*S/(mfup*F_TFLOPS);
+  const tTok = 2*m.N/(BW*mfud);
+  const tOut = tTok*out;
+  const tReq = tPrefill + tOut;
+  const thrTok = BW*mfud/(2*m.N);
+  const thrReq = thrTok/out;
+  const beamCost = tTok*out*beam;
+  const beamCache = tTok*out;
+  document.getElementById('ciOut').innerHTML = [
+    {l:'TTFT (prefill)', v:ms(tPrefill)},
+    {l:'TPOT / token', v:ms(tTok)},
+    {l:'输出 '+out+' tok', v:ms(tOut)},
+    {l:'单请求 latency', v:ms(tReq)},
+    {l:'吞吐 token/s', v:fmt(thrTok)+'/s'},
+    {l:'吞吐 请求/s', v:fmt(thrReq)+'/s'},
+    {l:'beam='+beam+' 无缓存', v:ms(beamCost), cls:beamCost>0.5?'crit':beamCost>0.1?'warn':''},
+    {l:'beam='+beam+' +prefix', v:ms(beamCache), cls:''}
+  ].map(o=>'<div class="res '+o.cls+'"><div class="rv">'+o.v+'</div><div class="rl">'+o.l+'</div></div>').join('');
+}
+['ci_model','ci_S','ci_beam','ci_bw','ci_mfup','ci_mfud','ci_out','ci_batch'].forEach(id=>document.getElementById(id).addEventListener('input', renderCalc));
+renderCalc();
+
+/* ---- 架构图联动高亮（自 OpenOneRec_architecture.html 整合） ---- */
+function highlightArch(ids){
+  document.querySelectorAll('.nd').forEach(el => el.classList.remove('hilite'));
+  ids.forEach(i => {
+    const el = document.querySelector('[data-id="'+i+'"]');
+    if(el) el.classList.add('hilite');
+  });
+}
+document.querySelectorAll('[data-glows]').forEach(g => {
+  const ids = g.getAttribute('data-glows').split(' ');
+  g.addEventListener('mouseenter', () => highlightArch(ids));
+  g.addEventListener('mouseleave', () => document.querySelectorAll('.nd').forEach(el => el.classList.remove('hilite')));
+});
+</script>
+</body>
+</html>
